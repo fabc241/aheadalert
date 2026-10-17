@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Guida Visiva",
+    "slug": "guida-visiva",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "io.github.fabc241.guidavisiva",
+      "infoPlist": {
+        "NSCameraUsageDescription": "La fotocamera serve per riconoscere ostacoli, gradini e cambi di luce davanti a te. Le immagini restano sul telefono."
+      }
+    },
+    "android": {
+      "package": "io.github.fabc241.guidavisiva",
+      "permissions": ["android.permission.CAMERA"],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": { "deploymentTarget": "17.0" },
+          "android": { "minSdkVersion": 31 }
+        }
+      ],
+      ["@qvac/sdk/expo-plugin", { "installMissingPrebuilds": true }]
+    ]
+  }
+}
