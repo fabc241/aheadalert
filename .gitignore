@@ -46,3 +46,6 @@ scripts/fase0/depth-bench/depth-bench
 scripts/fase0/*.log
 scripts/fase0/immagini-reali/
 scripts/fase0/risultati/profondita/
+
+# QVAC: worker bundle e manifest rigenerati a ogni prebuild
+/qvac
