@@ -135,6 +135,12 @@ export default function TestsScreen() {
           disabled={!!busy}
           onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
         />
+        <BigButton
+          title="Prova vibrazioni e suoni"
+          hint="Impara i segnali della guida e prova a riconoscerli, da fermo"
+          disabled={!!busy}
+          onPress={() => router.push('/feedback-test')}
+        />
         <Text style={styles.title} accessibilityRole="header">
           Prove tecniche
         </Text>

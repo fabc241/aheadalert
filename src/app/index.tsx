@@ -1,6 +1,7 @@
 // Home screen. MVP features are added here one at a time (plan, phase 1).
 // Step 1.1: obstacle guide (start/stop); the native module speaks the alerts itself.
 // Step 1.2: reliability line (the native module speaks its changes too; VoiceOver reads it on touch only).
+// Step 1.3: the native module also vibrates (and plays a directional sound with headphones) with each alert.
 import { Redirect, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
@@ -107,7 +108,7 @@ export default function HomeScreen() {
           hint={
             on
               ? 'Ferma gli avvisi e la fotocamera'
-              : 'Avvisa a voce degli ostacoli davanti e ai lati, entro 2 metri. Tieni il telefono al petto, inclinato verso il basso'
+              : 'Avvisa con voce e vibrazione degli ostacoli davanti e ai lati, entro 2 metri. Con le cuffie anche un suono dal lato dell’ostacolo. Tieni il telefono al petto, inclinato verso il basso'
           }
           disabled={state === 'loading'}
           onPress={toggleGuide}

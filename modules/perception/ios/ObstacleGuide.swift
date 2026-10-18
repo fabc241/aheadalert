@@ -1,5 +1,6 @@
 // MVP step 1.1: obstacles ahead, on the left and on the right, and low obstacles, with a short system voice.
 // MVP step 1.2: reliability level (ReliabilityMonitor), spoken when it changes and shown on screen.
+// MVP step 1.3: vibration per zone and directional sound with each alert, vibration when suspended (GuideFeedback).
 // Everything runs natively; JavaScript only starts/stops the guide and receives a status once a second.
 //
 // Pipeline per frame:
@@ -195,6 +196,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   private let inferQueue = DispatchQueue(label: "guide.depth.infer", qos: .userInitiated)
   private let analyzer = ObstacleAnalyzer()  // inferQueue
   private let voice = GuideVoice()  // main
+  private let feedback = GuideFeedback()  // main
   private let log = GuideLog()
   private let recorder = GuideRecorder()  // inferQueue
   var onStatus: (([String: Any]) -> Void)?
@@ -217,6 +219,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   private var reliability = ReliabilityMonitor(now: 0)
   private var lastStatus: Double = 0
   private var lastAlertText = ""
+  private var lastSuspendBuzz: Double = -100
   private var inferences = 0
   private var state = "starting"
   private var stat = (frames: 0, scaleOk: 0, fromFeatures: 0, fresh: 0, inliers: 0, candidates: 0, msSum: 0.0)
@@ -251,6 +254,8 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
         let audio = AVAudioSession.sharedInstance()
         try? audio.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
         try? audio.setActive(true)
+        self.feedback.onEvent = { [weak self] e in self?.log.write("feedback", e) }
+        self.feedback.start()
         UIApplication.shared.isIdleTimerDisabled = true
         let config = ARWorldTrackingConfiguration()
         config.planeDetection = [.horizontal]
@@ -278,6 +283,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       guard self.sessionStarted else { return completion() }  // still loading: load() cleans up
       self.sessionStarted = false
       self.session.pause()
+      self.feedback.stop()
       UIApplication.shared.isIdleTimerDisabled = false
       self.voice.say("Guida fermata", interrupt: true)
       self.log.write("stop")
@@ -306,6 +312,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     reliability = ReliabilityMonitor(now: startTime)
     lastStatus = startTime
     lastAlertText = ""
+    lastSuspendBuzz = -100
     inferences = 0
     state = "starting"
     stat = (0, 0, 0, 0, 0, 0, 0)
@@ -417,6 +424,8 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     let changed = reliability.update(now: now)
     if changed {
       log.write("reliability", "\(reliability.level.rawValue) \(reliability.reason.rawValue); light \(lightText)")
+      // Felt at once, also where the voice is not heard; the voice may come later, after an alert.
+      if reliability.level == .unavailable { buzzSuspended(now: now) }
     }
 
     if let a = analysis, reliability.raw != .unavailable {
@@ -443,6 +452,8 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     if !voice.speaking || cut, let text = reliability.takeMessage(now: now) {
       voice.say(text, interrupt: cut, reliability: true)
       log.write("reliability-voice", cut ? "\(text) (cut the previous one)" : text)
+      // the reminder every 15 s while suspended (the change itself has buzzed already)
+      if reliability.level == .unavailable && now - lastSuspendBuzz > 5 { buzzSuspended(now: now) }
     }
 
     // Spoken hint: the phone is held too upright to see the floor close by.
@@ -483,16 +494,26 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       let urgent = c.zone == .ahead && c.hit.distance <= 1.0 && voice.speakingZone != .ahead
       if voice.speaking && !urgent { return }
       let text = GuideVoice.message(c.zone, c.hit)
+      // Vibration and sound first: they are felt while the voice is still starting.
+      let t0 = DispatchTime.now().uptimeNanoseconds
+      let played = feedback.play(FeedbackKind(c.zone), step: step, low: c.hit.low)
+      let ms = elapsedMs(since: t0)
       voice.say(text, zone: c.zone, interrupt: voice.speaking)
       lastSpoken[i] = now
       lastStep[i] = step
       lastAlertText = text
       log.write("alert", zone: c.zone.key, distance: c.hit.distance, low: c.hit.low,
-                String(format: "%@; area %.3f m2; reliability %@", text, c.hit.area, reliability.level.rawValue))
+                String(format: "%@; area %.3f m2; reliability %@; haptic %d sound %d in %.1f ms", text, c.hit.area,
+                       reliability.level.rawValue, played.haptic ? 1 : 0, played.sound ? 1 : 0, ms))
       return
     }
   }
 
+  private func buzzSuspended(now: Double) {
+    lastSuspendBuzz = now
+    let played = feedback.play(.suspended)
+    log.write("feedback", "suspended haptic \(played.haptic ? 1 : 0)")
+  }
 
   private func sendStatus(now: Double) {
     let secs = now - lastStatus

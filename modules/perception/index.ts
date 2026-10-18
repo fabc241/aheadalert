@@ -66,6 +66,11 @@ export type GuideStatus = {
   light?: number;
 };
 
+/** MVP step 1.3: the guide's signals. left = one tap, right = two taps, ahead = long buzz, suspended = two long buzzes. */
+export type FeedbackKind = 'left' | 'ahead' | 'right' | 'suspended';
+/** What was actually played: no sound without headphones, no vibration if the phone has none. */
+export type FeedbackPlayed = { haptic: boolean; sound: boolean; headphones: boolean };
+
 type Events = { onLiveProgress: (p: LiveProgress) => void; onGuideStatus: (s: GuideStatus) => void };
 
 declare class PerceptionNativeModule extends NativeModule<Events> {
@@ -73,6 +78,10 @@ declare class PerceptionNativeModule extends NativeModule<Events> {
   readonly autoRun: string;
   startGuide(): Promise<{ logPath: string }>;
   stopGuide(): Promise<void>;
+  startFeedbackTest(): Promise<{ haptics: boolean; headphones: boolean }>;
+  /** step: distance step as spoken, 1 = half a metre … 4 = two metres (stronger when closer). */
+  playFeedback(kind: FeedbackKind, step: number, low: boolean, haptic: boolean, sound: boolean): Promise<FeedbackPlayed>;
+  stopFeedbackTest(): Promise<void>;
   deviceInfo(): DeviceInfo;
   memory(): Memory;
   startMemorySampler(): void;

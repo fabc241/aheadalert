@@ -1,4 +1,4 @@
-// Native perception module. MVP features: obstacle guide (ObstacleGuide.swift, step 1.1).
+// Native perception module. MVP features: obstacle guide (ObstacleGuide.swift, step 1.1), its vibrations and sounds (GuideFeedback.swift, step 1.3).
 // Phase 0B (iPhone 13): on-device measurements to decide what goes into the MVP.
 // - Depth Anything V2 Small (Core ML) on photos and live ARKit frames, per compute unit
 // - memory (phys_footprint, the metric iOS uses for out-of-memory termination) and thermal state
@@ -17,6 +17,7 @@ import os
 public class PerceptionModule: Module {
   private let live = LiveDepthRunner()
   private let guide = ObstacleGuide()
+  private let feedbackTest = GuideFeedback()  // main
   private var player: AudioPlayback?
 
   public func definition() -> ModuleDefinition {
@@ -38,6 +39,27 @@ public class PerceptionModule: Module {
     AsyncFunction("stopGuide") { (promise: Promise) in
       self.guide.stop { promise.resolve(nil) }
     }
+
+    // MVP step 1.3: the guide's vibrations and sounds on their own, to learn them standing still and to check that
+    // they are told apart (src/app/feedback-test.tsx). The guide must be stopped (it owns the same hardware).
+    AsyncFunction("startFeedbackTest") { () -> [String: Any] in
+      let audio = AVAudioSession.sharedInstance()
+      try? audio.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
+      try? audio.setActive(true)
+      self.feedbackTest.stop()
+      self.feedbackTest.start()
+      return ["haptics": GuideFeedback.hapticsSupported, "headphones": GuideFeedback.headphones]
+    }.runOnQueue(.main)
+
+    AsyncFunction("playFeedback") { (kind: String, step: Int, low: Bool, haptic: Bool, sound: Bool) -> [String: Any] in
+      guard let k = FeedbackKind(rawValue: kind) else { throw Phase0Error("Segnale sconosciuto: \(kind)") }
+      let played = self.feedbackTest.play(k, step: step, low: low, haptic: haptic, sound: sound)
+      return ["haptic": played.haptic, "sound": played.sound, "headphones": GuideFeedback.headphones]
+    }.runOnQueue(.main)
+
+    AsyncFunction("stopFeedbackTest") {
+      self.feedbackTest.stop()
+    }.runOnQueue(.main)
 
     Constant("documentsPath") { Paths.documents.path }
 
