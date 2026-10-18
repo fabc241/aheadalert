@@ -54,7 +54,9 @@
           "backgroundColor": "#000000",
           "imageWidth": 200
         }
-      ]
-    ]
+      ],
+      "expo-router"
+    ],
+    "scheme": "guidavisiva"
   }
 }

@@ -10,7 +10,6 @@ An offline mobility aid for people with low vision caused by a restricted visual
 - **Fully offline**: every model runs on the phone. No images leave the device.
 - **No LiDAR required**: it must work on ordinary phones. LiDAR will be an optional extra.
 - **Accessible first**: few large controls, high contrast, VoiceOver/TalkBack support. The user interface and the voice are in Italian.
-- **No added light**: the app never turns on the torch or any other light.
 
 ## Planned features (MVP)
 
@@ -48,7 +47,8 @@ Details: [Phase 0A summary (Mac)](scripts/phase0/results/phase0a-summary.md) · 
 ## Repository layout
 
 ```
-App.tsx                    Phase 0B test screen (Italian UI)
+src/app/                   Screens (Expo Router): home screen, Phase 0 technical tests (Italian UI)
+src/ui/                    Shared UI: high-contrast theme, large button
 src/phase0/                Test runners: depth (Core ML) and QVAC (description, OCR, voice, classification)
 modules/perception/        Native module: depth benchmark, live ARKit depth, memory/thermal probes, OCR, WAV
 scripts/phase0/            Phase 0 tooling: Mac benchmarks (*.mjs, depth-bench) and iPhone helper scripts
