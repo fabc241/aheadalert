@@ -3,6 +3,7 @@
     "@qvac/sdk/llamacpp-completion/plugin",
     "@qvac/sdk/ggml-ocr/plugin",
     "@qvac/sdk/ggml-classification/plugin",
-    "@qvac/sdk/tts-ggml/plugin"
+    "@qvac/sdk/tts-ggml/plugin",
+    "@qvac/sdk/nmtcpp-translation/plugin"
   ]
 }

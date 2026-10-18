@@ -49,3 +49,6 @@ scripts/fase0/risultati/profondita/
 
 # QVAC: worker bundle e manifest rigenerati a ogni prebuild
 /qvac
+
+# Fase 0B: risultati scaricati dall'iPhone (contengono scatti reali)
+scripts/fase0/risultati/iphone/
