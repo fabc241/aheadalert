@@ -91,7 +91,7 @@ Memory = phys_footprint, the metric iOS uses to terminate an app. On this iPhone
 - With ARKit tracking the space, memory rises to about 600–700 MB (203 MB in the dark without tracking): well below the limit (~2,070 MB).
 - Tracking is normal 95–100% of the time, including passages through darker rooms (moments at 31–78 lux). In complete darkness (4 lux) it is 0%. The evening dim-light test has not been done yet.
 
-## Phase 0B outcome (proposal, awaiting confirmation)
+## Phase 0B outcome (confirmed by the user on 18 Oct 2026)
 | Feature | Outcome | Reason |
 |---|---|---|
 | Obstacles with Depth Anything on the **Neural Engine** | ✅ in the MVP | 15–19 fps live, stable, only "fair" after 15 min |
