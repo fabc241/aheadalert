@@ -2,7 +2,7 @@
 
 An offline mobility aid for people with low vision caused by a restricted visual field (for example retinitis pigmentosa). The phone camera warns about low and lateral obstacles, level changes such as steps and curbs, and light/dark transitions. A local assistant can describe the scene and read signs aloud.
 
-> **Status: research prototype.** Phase 0 (technical feasibility on the device) is complete and its outcome confirmed; the MVP is next.
+> **Status: research prototype.** Phase 0 (technical feasibility on the device) is complete. MVP in progress, one feature at a time: step 1.1 (obstacle guide with short voice messages) done; distances still to be validated.
 > The app is meant to **complement the white cane, never to replace it**. It has not been validated and must not be distributed.
 
 ## Principles
@@ -47,10 +47,12 @@ Details: [Phase 0A summary (Mac)](scripts/phase0/results/phase0a-summary.md) · 
 ## Repository layout
 
 ```
-src/app/                   Screens (Expo Router): home screen, Phase 0 technical tests (Italian UI)
+src/app/                   Screens (Expo Router): home screen with the obstacle guide, Phase 0 technical tests (Italian UI)
 src/ui/                    Shared UI: high-contrast theme, large button
 src/phase0/                Test runners: depth (Core ML) and QVAC (description, OCR, voice, classification)
-modules/perception/        Native module: depth benchmark, live ARKit depth, memory/thermal probes, OCR, WAV
+modules/perception/        Native module: obstacle guide (ObstacleAnalyzer, ObstacleGuide), Phase 0 depth benchmark,
+                           memory/thermal probes, OCR, WAV
+scripts/guide/             Obstacle guide tooling: synthetic geometry test, replay of iPhone recordings, log fetch
 scripts/phase0/            Phase 0 tooling: Mac benchmarks (*.mjs, depth-bench) and iPhone helper scripts
 scripts/phase0/results/    Phase 0 reports and summaries
 qvac.config.json           QVAC plugins included in the mobile worker bundle

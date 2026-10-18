@@ -52,3 +52,6 @@ scripts/phase0/results/iphone/
 
 # QVAC: worker bundle and manifest regenerated on every prebuild
 /qvac
+
+# MVP: obstacle guide logs fetched from the iPhone (personal walking sessions)
+scripts/guide/logs/

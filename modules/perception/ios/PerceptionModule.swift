@@ -1,3 +1,4 @@
+// Native perception module. MVP features: obstacle guide (ObstacleGuide.swift, step 1.1).
 // Phase 0B (iPhone 13): on-device measurements to decide what goes into the MVP.
 // - Depth Anything V2 Small (Core ML) on photos and live ARKit frames, per compute unit
 // - memory (phys_footprint, the metric iOS uses for out-of-memory termination) and thermal state
@@ -15,12 +16,28 @@ import os
 
 public class PerceptionModule: Module {
   private let live = LiveDepthRunner()
+  private let guide = ObstacleGuide()
   private var player: AudioPlayback?
 
   public func definition() -> ModuleDefinition {
     Name("Perception")
 
-    Events("onLiveProgress")
+    Events("onLiveProgress", "onGuideStatus")
+
+    // MVP step 1.1: obstacle guide with short voice messages. Resolves once the camera is running.
+    AsyncFunction("startGuide") { (promise: Promise) in
+      self.guide.onStatus = { [weak self] s in self?.sendEvent("onGuideStatus", s) }
+      self.guide.start { result in
+        switch result {
+        case .success(let r): promise.resolve(r)
+        case .failure(let e): promise.reject("E_GUIDE", e.localizedDescription)
+        }
+      }
+    }
+
+    AsyncFunction("stopGuide") { (promise: Promise) in
+      self.guide.stop { promise.resolve(nil) }
+    }
 
     Constant("documentsPath") { Paths.documents.path }
 
@@ -134,7 +151,7 @@ public class PerceptionModule: Module {
     }
   }
 
-  private static func modelIdentifier() -> String {
+  static func modelIdentifier() -> String {
     var sys = utsname()
     uname(&sys)
     return withUnsafeBytes(of: &sys.machine) { buf in

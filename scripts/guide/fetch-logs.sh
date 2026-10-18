@@ -1,0 +1,14 @@
+#!/bin/zsh
+# MVP: fetches the obstacle guide logs and recordings (Documents/guide) from the iPhone.
+# One CSV per session: start/stop, every voice alert (zone, distance, low), hints, and a stat line per second.
+# rec-<date>/: diagnostic recording, twice a second (image, depth, pose, ARKit feature points, analysis);
+# view it with scripts/guide/replay.py or scripts/guide/replay-swift/run.sh. Personal images: gitignored.
+# Usage (from mobile/): scripts/guide/fetch-logs.sh
+set -e
+cd "$(dirname "$0")"
+DEVICE=${DEVICE:-YOUR-IPHONE-UDID}
+APP=io.github.fabc241.guidavisiva
+mkdir -p logs
+xcrun devicectl device copy from --device "$DEVICE" --domain-type appDataContainer --domain-identifier "$APP" \
+  --source "Documents/guide" --destination logs >/dev/null
+echo "Logs in scripts/guide/logs"

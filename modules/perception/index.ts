@@ -50,11 +50,17 @@ export type DeviceInfo = Memory & {
 
 export type DepthUnits = 'cpu' | 'gpu' | 'ane' | 'all';
 
-type Events = { onLiveProgress: (p: LiveProgress) => void };
+/** Obstacle guide state (MVP step 1.1), sent about once a second while it runs. */
+export type GuideState = 'starting' | 'tracking' | 'searchingFloor' | 'upright' | 'active' | 'stopped';
+export type GuideStatus = { state: GuideState; fps?: number; lastAlert?: string; thermal?: string };
+
+type Events = { onLiveProgress: (p: LiveProgress) => void; onGuideStatus: (s: GuideStatus) => void };
 
 declare class PerceptionNativeModule extends NativeModule<Events> {
   readonly documentsPath: string;
   readonly autoRun: string;
+  startGuide(): Promise<{ logPath: string }>;
+  stopGuide(): Promise<void>;
   deviceInfo(): DeviceInfo;
   memory(): Memory;
   startMemorySampler(): void;
