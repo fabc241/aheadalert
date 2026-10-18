@@ -1,4 +1,5 @@
 // MVP step 1.1: obstacles ahead, on the left and on the right, and low obstacles, with a short system voice.
+// MVP step 1.2: reliability level (ReliabilityMonitor), spoken when it changes and shown on screen.
 // Everything runs natively; JavaScript only starts/stops the guide and receives a status once a second.
 //
 // Pipeline per frame:
@@ -21,6 +22,7 @@ final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
   private var current: AVSpeechUtterance?
   private var deadline: Double = 0
   private(set) var speakingZone: Zone?
+  private(set) var speakingReliability = false  // the current message is a reliability one (step 1.2)
   var onEvent: ((String) -> Void)?  // for the log
 
   override init() {
@@ -36,11 +38,12 @@ final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
     onEvent?("watchdog")
     current = nil
     speakingZone = nil
+    speakingReliability = false
     return false
   }
 
   /// Main thread only. With VoiceOver on, the voice and rate chosen for VoiceOver are used.
-  func say(_ text: String, zone: Zone? = nil, interrupt: Bool = false) {
+  func say(_ text: String, zone: Zone? = nil, interrupt: Bool = false, reliability: Bool = false) {
     if interrupt { synth.stopSpeaking(at: .immediate) }
     let u = AVSpeechUtterance(string: text)
     u.voice = AVSpeechSynthesisVoice(language: "it-IT")
@@ -49,6 +52,7 @@ final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
     current = u
     deadline = CACurrentMediaTime() + min(6, 1 + Double(text.count) * 0.1)  // generous: ~2.5 s for an alert
     speakingZone = zone
+    speakingReliability = reliability
     synth.speak(u)
   }
 
@@ -60,6 +64,7 @@ final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
       self.onEvent?(how)
       self.current = nil
       self.speakingZone = nil
+      self.speakingReliability = false
     }
   }
 
@@ -209,11 +214,12 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   private var lastConfirmed: [Double] = [-100, -100, -100]
   private var lastHint: Double = -100
   private var uprightSince: Double?
+  private var reliability = ReliabilityMonitor(now: 0)
   private var lastStatus: Double = 0
   private var lastAlertText = ""
   private var inferences = 0
   private var state = "starting"
-  private var stat = (frames: 0, scaleOk: 0, fromFeatures: 0, inliers: 0, candidates: 0, msSum: 0.0)
+  private var stat = (frames: 0, scaleOk: 0, fromFeatures: 0, fresh: 0, inliers: 0, candidates: 0, msSum: 0.0)
 
   func start(completion: @escaping (Result<[String: Any], Error>) -> Void) {
     guard ARWorldTrackingConfiguration.isSupported else {
@@ -297,17 +303,19 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     lastConfirmed = [-100, -100, -100]
     lastHint = -100
     uprightSince = nil
+    reliability = ReliabilityMonitor(now: startTime)
     lastStatus = startTime
     lastAlertText = ""
     inferences = 0
     state = "starting"
-    stat = (0, 0, 0, 0, 0, 0)
+    stat = (0, 0, 0, 0, 0, 0, 0)
   }
 
   // MARK: ARSessionDelegate (frameQueue)
 
   func session(_ session: ARSession, didUpdate frame: ARFrame) {
     guard !busy, let request else { return }
+    let light = frame.lightEstimate.map { Float($0.ambientIntensity) }
     let tracking = frame.camera.trackingState
     guard case .normal = tracking else {
       let reason: String
@@ -315,11 +323,11 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       case .limited(let r): reason = "\(r)"
       default: reason = "notAvailable"
       }
-      DispatchQueue.main.async { self.handle(nil, state: "tracking", detail: reason, ms: 0) }
+      DispatchQueue.main.async { self.handle(nil, state: "tracking", detail: reason, light: light, ms: 0) }
       return
     }
     guard let floor = Self.floorPlane(frame: frame) else {
-      DispatchQueue.main.async { self.handle(nil, state: "searchingFloor", detail: "", ms: 0) }
+      DispatchQueue.main.async { self.handle(nil, state: "searchingFloor", detail: "", light: light, ms: 0) }
       return
     }
     let floorY = floor.y
@@ -345,7 +353,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
         self.recorder.maybeSave(image: pixelBuffer, depth: depth, camera: camera, floor: floor, features: features, analysis: analysis)
       }
       self.frameQueue.async { self.busy = false }
-      DispatchQueue.main.async { self.handle(analysis, state: "active", detail: "", ms: ms) }
+      DispatchQueue.main.async { self.handle(analysis, state: "active", detail: "", light: light, ms: ms) }
     }
   }
 
@@ -383,7 +391,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
 
   // MARK: Alerts (main)
 
-  private func handle(_ analysis: FrameAnalysis?, state newState: String, detail: String, ms: Double) {
+  private func handle(_ analysis: FrameAnalysis?, state newState: String, detail: String, light: Float?, ms: Double) {
     guard running else { return }
     let now = CACurrentMediaTime()
     if newState != state {
@@ -391,36 +399,61 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       state = newState
     }
 
+    // Reliability (step 1.2) is updated first: it decides whether this frame may produce alerts.
+    reliability.frame(newState == "active" ? .ok : newState == "searchingFloor" ? .noFloor : .noTracking,
+                      light: light, now: now)
     if let a = analysis {
       inferences += 1
       stat.frames += 1
       stat.msSum += ms
       if a.scaleOk { stat.scaleOk += 1 }
       if a.scaleSource == "features" { stat.fromFeatures += 1 }
+      let fresh = a.scaleSource == "features" || a.scaleSource == "floor"
+      if fresh { stat.fresh += 1 }
+      reliability.analysis(scaleFresh: fresh, now: now)
       stat.inliers += a.fitInliers
       stat.candidates += a.fitCandidates
+    }
+    let changed = reliability.update(now: now)
+    if changed {
+      log.write("reliability", "\(reliability.level.rawValue) \(reliability.reason.rawValue); light \(lightText)")
+    }
+
+    if let a = analysis, reliability.raw != .unavailable {
       for zone in Zone.allCases {
         tracks[zone.rawValue].append(a.zones[zone.rawValue])
         if tracks[zone.rawValue].count > GuideTuning.window { tracks[zone.rawValue].removeFirst() }
       }
       uprightSince = a.nearestFloor > GuideTuning.tiltDownDist ? (uprightSince ?? now) : nil
+      // Alerts need an analysed frame with light: while the guide is suspended (no tracking, no floor, or black
+      // frames) nothing is announced. They resume with the first good frame, before "Avvisi di nuovo affidabili"
+      // (1 s later), so that an obstacle met right then is not kept silent.
       alertIfNeeded(now: now)
+    } else if analysis != nil {
+      // black frames although ARKit still tracks: what they show is not trusted, not even a moment later
+      tracks = [[], [], []]
+      uprightSince = nil
     } else {
       // no depth this frame (no tracking or no floor yet): zones decay
       for zone in Zone.allCases where !tracks[zone.rawValue].isEmpty { tracks[zone.rawValue].removeFirst() }
     }
 
-    // Spoken hint: the floor is needed for distances in metres.
-    let noFloorForLong = state == "searchingFloor" && now - startTime > 4
-    let upright = uprightSince.map { now - $0 > 3 } ?? false
-    if (noFloorForLong || upright) && now - lastHint >= GuideTuning.hintEvery && !voice.speaking {
-      lastHint = now
-      let text = noFloorForLong ? "Cerco il pavimento. Inclina il telefono verso il basso" : "Inclina il telefono verso il basso"
-      voice.say(text)
-      log.write("hint", noFloorForLong ? "searchingFloor" : "upright")
+    // Reliability messages wait for the voice to be free, so they never cut an alert short.
+    let cut = voice.speaking && voice.speakingReliability && reliability.changePending
+    if !voice.speaking || cut, let text = reliability.takeMessage(now: now) {
+      voice.say(text, interrupt: cut, reliability: true)
+      log.write("reliability-voice", cut ? "\(text) (cut the previous one)" : text)
     }
 
-    if now - lastStatus >= 1 { sendStatus(now: now) }
+    // Spoken hint: the phone is held too upright to see the floor close by.
+    let upright = uprightSince.map { now - $0 > 3 } ?? false
+    if upright && now - lastHint >= GuideTuning.hintEvery && !voice.speaking {
+      lastHint = now
+      voice.say("Inclina il telefono verso il basso")
+      log.write("hint", "upright")
+    }
+
+    if changed || now - lastStatus >= 1 { sendStatus(now: now) }
   }
 
   private func alertIfNeeded(now: Double) {
@@ -455,7 +488,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       lastStep[i] = step
       lastAlertText = text
       log.write("alert", zone: c.zone.key, distance: c.hit.distance, low: c.hit.low,
-                String(format: "%@; area %.3f m2", text, c.hit.area))
+                String(format: "%@; area %.3f m2; reliability %@", text, c.hit.area, reliability.level.rawValue))
       return
     }
   }
@@ -469,15 +502,23 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       guard let h = tracks[z.rawValue].last ?? nil else { return "\(z.key) -" }
       return String(format: "%@ %.2f%@", z.key, h.distance, h.low ? " low" : "")
     }.joined(separator: "; ")
-    if stat.frames > 0 {
-      log.write("stat", String(format: "fps %.1f; infer+analysis %.0f ms; scale ok %d/%d (features %d); fit %d/%d; %@; %@; voice %@",
-                               fps, stat.msSum / Double(stat.frames), stat.scaleOk, stat.frames, stat.fromFeatures,
-                               stat.inliers / stat.frames, stat.candidates / stat.frames, zones, MemoryProbe.thermal(),
-                               voice.speaking ? "busy" : "free"))
-    }
+    // Written every second, also without analyses: the evening test reads light against tracking and scale here.
+    let n = max(stat.frames, 1)
+    log.write("stat", String(format: "fps %.1f; infer+analysis %.0f ms; scale ok %d/%d (features %d, fresh %d); fit %d/%d; %@; %@; voice %@; light %@; tracking %@; reliability %@ %@",
+                             fps, stat.msSum / Double(n), stat.scaleOk, stat.frames, stat.fromFeatures, stat.fresh,
+                             stat.inliers / n, stat.candidates / n, zones, MemoryProbe.thermal(),
+                             voice.speaking ? "busy" : "free", lightText, state,
+                             reliability.level.rawValue, reliability.reason.rawValue))
     let upright = uprightSince.map { now - $0 > 3 } ?? false
-    onStatus?(["state": upright && state == "active" ? "upright" : state, "fps": fps, "lastAlert": lastAlertText,
-               "thermal": MemoryProbe.thermal()])
-    stat = (0, 0, 0, 0, 0, 0)
+    var status: [String: Any] = [
+      "state": upright && state == "active" ? "upright" : state, "fps": fps, "lastAlert": lastAlertText,
+      "thermal": MemoryProbe.thermal(), "reliability": reliability.level.rawValue,
+      "reliabilityReason": reliability.reason.rawValue,
+    ]
+    if let l = reliability.light { status["light"] = l }
+    onStatus?(status)
+    stat = (0, 0, 0, 0, 0, 0, 0)
   }
+
+  private var lightText: String { reliability.light.map { String(format: "%.0f", $0) } ?? "-" }
 }

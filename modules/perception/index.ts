@@ -52,7 +52,19 @@ export type DepthUnits = 'cpu' | 'gpu' | 'ane' | 'all';
 
 /** Obstacle guide state (MVP step 1.1), sent about once a second while it runs. */
 export type GuideState = 'starting' | 'tracking' | 'searchingFloor' | 'upright' | 'active' | 'stopped';
-export type GuideStatus = { state: GuideState; fps?: number; lastAlert?: string; thermal?: string };
+/** How far the alerts can be trusted (MVP step 1.2); "unavailable" means no alerts at all. */
+export type Reliability = 'good' | 'reduced' | 'unavailable';
+export type ReliabilityReason = 'none' | 'starting' | 'lowLight' | 'scale' | 'slow' | 'dark' | 'motion' | 'noFloor';
+export type GuideStatus = {
+  state: GuideState;
+  fps?: number;
+  lastAlert?: string;
+  thermal?: string;
+  reliability?: Reliability;
+  reliabilityReason?: ReliabilityReason;
+  /** ARKit ambientIntensity (lumens, 1000 = neutral light; not lux). */
+  light?: number;
+};
 
 type Events = { onLiveProgress: (p: LiveProgress) => void; onGuideStatus: (s: GuideStatus) => void };
 

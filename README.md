@@ -2,7 +2,7 @@
 
 An offline mobility aid for people with low vision caused by a restricted visual field (for example retinitis pigmentosa). The phone camera warns about low and lateral obstacles, level changes such as steps and curbs, and light/dark transitions. A local assistant can describe the scene and read signs aloud.
 
-> **Status: research prototype.** Phase 0 (technical feasibility on the device) is complete. MVP in progress, one feature at a time: step 1.1 (obstacle guide with short voice messages) done; distances still to be validated.
+> **Status: research prototype.** Phase 0 (technical feasibility on the device) is complete. MVP in progress, one feature at a time: step 1.1 (obstacle guide with short voice messages) and step 1.2 (reliability indicator: the guide says when the camera cannot see well enough and suspends the alerts) done; distances still to be validated.
 > The app is meant to **complement the white cane, never to replace it**. It has not been validated and must not be distributed.
 
 ## Principles
