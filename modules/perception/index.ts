@@ -64,10 +64,15 @@ export type GuideStatus = {
   reliabilityReason?: ReliabilityReason;
   /** ARKit ambientIntensity (lumens, 1000 = neutral light; not lux). */
   light?: number;
+  /** MVP step 1.4: last light-passage warning spoken ("Zona buia davanti" / "Zona luminosa davanti"), or "". */
+  lastLight?: string;
 };
 
-/** MVP step 1.3: the guide's signals. left = one tap, right = two taps, ahead = long buzz, suspended = two long buzzes. */
-export type FeedbackKind = 'left' | 'ahead' | 'right' | 'suspended';
+/**
+ * MVP step 1.3: the guide's signals. left = one tap, right = two taps, ahead = long buzz, suspended = two long buzzes.
+ * Step 1.4: light = three quick taps (light passage ahead), without sound.
+ */
+export type FeedbackKind = 'left' | 'ahead' | 'right' | 'suspended' | 'light';
 /** What was actually played: no sound without headphones, no vibration if the phone has none. */
 export type FeedbackPlayed = { haptic: boolean; sound: boolean; headphones: boolean };
 

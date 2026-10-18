@@ -4,7 +4,7 @@
 import CoreGraphics
 import simd
 
-/// Thresholds of the first version. The intermediate tests of step 1.1 will tune them.
+/// Thresholds, tuned with the walking tests of 18/10 (step 1.1).
 enum GuideTuning {
   static let alertDistance: Float = 2.0  // m ahead; becomes a setting in step 1.6
   static let minForward: Float = 0.25  // m from the phone: closer points are the user's hands, or out of view
@@ -104,7 +104,6 @@ final class ObstacleAnalyzer {
                           SIMD3(T.columns.2.x, T.columns.2.y, T.columns.2.z))
     let origin = SIMD3(T.columns.3.x, T.columns.3.y, T.columns.3.z)
 
-    // Walking direction: where the camera points, flattened on the floor (world y is up, gravity aligned).
     // Walking direction: where the user is going; when standing still, where the camera points, flattened on the
     // floor (world y is up, gravity aligned). The phone alone turns 10° easily, and in a 90 cm corridor that puts
     // a wall "ahead" within a metre (test of 18/10).

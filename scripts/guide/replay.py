@@ -224,7 +224,8 @@ def main():
     every = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     out = rec / "overlay"
     out.mkdir(exist_ok=True)
-    names = sorted(p.stem for p in rec.glob("*.json"))[::every]
+    # frames without depth (step 1.4: recorded for the light warning while tracking or the floor is missing) are skipped
+    names = sorted(p.stem for p in rec.glob("*.json") if p.with_suffix(".depth").exists())[::every]
     print("frame | pitch | n feat | phone: err, zones | features: inliers, err, zones")
     for n in names:
         f = Frame(rec, n)

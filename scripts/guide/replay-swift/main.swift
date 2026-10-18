@@ -21,6 +21,7 @@ var trail: [(t: Double, p: SIMD3<Float>)] = []
 print("frame | scale (source, fit) | zones (as the phone would see them, before the 3-of-5 debounce)")
 for n in names {
   let m = try JSONSerialization.jsonObject(with: Data(contentsOf: dir.appendingPathComponent("\(n).json"))) as! [String: Any]
+  if m["lightOnly"] != nil { continue }  // step 1.4: frame without depth (tracking lost or no floor)
   let f = { (k: String) in (m[k] as! [NSNumber]).map { $0.floatValue } }
   let t = f("transform"), k = f("intrinsics"), fp = (m["features"] as? [NSNumber])?.map { $0.floatValue } ?? []
   let transform = simd_float4x4(SIMD4(t[0], t[1], t[2], t[3]), SIMD4(t[4], t[5], t[6], t[7]),

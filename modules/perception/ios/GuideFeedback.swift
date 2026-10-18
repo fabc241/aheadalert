@@ -2,6 +2,7 @@
 // together with each obstacle alert, and a vibration of its own when the guide is suspended.
 //
 // Vibration: left = one short tap, right = two short taps, ahead = one long buzz, suspended = two long buzzes.
+// Step 1.4: light passage ahead (dark or bright) = three short, quick taps, without sound.
 // Stronger as the obstacle gets closer (distance step 4 = 2 m … 1 = half a metre). The voice takes about a second
 // to say "Davanti, un metro": the vibration arrives before it.
 // Sound: a short click placed on the left, ahead or on the right (HRTF), lower in pitch for a low obstacle. Only with
@@ -11,7 +12,7 @@ import AVFoundation
 import CoreHaptics
 
 enum FeedbackKind: String {
-  case left, ahead, right, suspended
+  case left, ahead, right, suspended, light
 
   init(_ zone: Zone) {
     switch zone {
@@ -33,6 +34,8 @@ enum FeedbackTuning {
   static let tapGap: Double = 0.2  // s of stillness between the two taps of "right"
   static let buzz: Double = 0.4  // s, "ahead" and each buzz of "suspended"
   static let buzzGap: Double = 0.25
+  /// Light passage: quicker than the taps of "right", so that three of them are not taken for two.
+  static let quickTap: Double = 0.07, quickTapGap: Double = 0.1
   /// Sound direction, degrees from straight ahead. Not ±90: a source exactly at the side sounds "inside the ear".
   static let azimuth: [FeedbackKind: Float] = [.left: -70, .ahead: 0, .right: 70]
   static let clickHz: Double = 1200, lowClickHz: Double = 500
@@ -95,7 +98,7 @@ final class GuideFeedback {
     -> (haptic: Bool, sound: Bool) {
     var played = (haptic: false, sound: false)
     if haptic { played.haptic = playHaptic(kind, step: step) }
-    if sound && kind != .suspended { played.sound = playClick(kind, low: low) }
+    if sound && FeedbackTuning.azimuth[kind] != nil { played.sound = playClick(kind, low: low) }  // obstacles only
     return played
   }
 
@@ -150,8 +153,8 @@ final class GuideFeedback {
   static func pattern(_ kind: FeedbackKind, step: Int) throws -> CHHapticPattern {
     let s = max(1, min(4, step))
     let i = kind == .suspended ? 1 : FeedbackTuning.intensity[s]
-    let ti = FeedbackTuning.tapIntensity[s]
-    func tap(_ t: Double) -> [CHHapticEvent] {
+    let ti = kind == .light ? 1 : FeedbackTuning.tapIntensity[s]
+    func tap(_ t: Double, _ duration: Double = FeedbackTuning.tap) -> [CHHapticEvent] {
       [CHHapticEvent(eventType: .hapticTransient, parameters: [
         CHHapticEventParameter(parameterID: .hapticIntensity, value: ti),
         CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.8),
@@ -159,7 +162,7 @@ final class GuideFeedback {
        CHHapticEvent(eventType: .hapticContinuous, parameters: [
         CHHapticEventParameter(parameterID: .hapticIntensity, value: ti),
         CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.7),
-      ], relativeTime: t, duration: FeedbackTuning.tap)]
+      ], relativeTime: t, duration: duration)]
     }
     func buzz(_ t: Double, sharpness: Float) -> CHHapticEvent {
       CHHapticEvent(eventType: .hapticContinuous, parameters: [
@@ -174,6 +177,9 @@ final class GuideFeedback {
     case .ahead: events = [buzz(0, sharpness: 0.5)]
     case .suspended:
       events = [buzz(0, sharpness: 0.2), buzz(FeedbackTuning.buzz + FeedbackTuning.buzzGap, sharpness: 0.2)]
+    case .light:
+      let every = FeedbackTuning.quickTap + FeedbackTuning.quickTapGap
+      events = (0..<3).flatMap { tap(Double($0) * every, FeedbackTuning.quickTap) }
     }
     return try CHHapticPattern(events: events, parameters: [])
   }

@@ -1,13 +1,15 @@
 // MVP step 1.1: obstacles ahead, on the left and on the right, and low obstacles, with a short system voice.
 // MVP step 1.2: reliability level (ReliabilityMonitor), spoken when it changes and shown on screen.
 // MVP step 1.3: vibration per zone and directional sound with each alert, vibration when suspended (GuideFeedback).
+// MVP step 1.4: warning before a passage from light to dark or back (LightAnalyzer), 5 times a second on every
+// camera frame, also while the obstacle alerts are suspended (in a dark room the lit door is what matters).
 // Everything runs natively; JavaScript only starts/stops the guide and receives a status once a second.
 //
 // Pipeline per frame:
 //   ARKit frame → Depth Anything V2 Small (relative inverse depth, known only up to scale and shift)
-//   → metric scale fitted on the ARKit floor plane (rays that hit the floor give the true depth there)
+//   → metric scale fitted on ARKit's 3D feature points (on the floor plane when there are too few of them)
 //   → 3D point per sample → height above the floor, distance ahead, lateral offset from the walking line
-//   → three zones (left / ahead / right) → debounce over a few frames → voice message.
+//   → three zones (left / ahead / right) → debounce over a few frames → vibration, sound and voice message.
 // User-facing strings (voice messages) are in Italian.
 import ARKit
 import AVFoundation
@@ -24,6 +26,7 @@ final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
   private var deadline: Double = 0
   private(set) var speakingZone: Zone?
   private(set) var speakingReliability = false  // the current message is a reliability one (step 1.2)
+  private(set) var speakingLight = false  // the current message is a light-passage warning (step 1.4)
   var onEvent: ((String) -> Void)?  // for the log
 
   override init() {
@@ -40,11 +43,12 @@ final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
     current = nil
     speakingZone = nil
     speakingReliability = false
+    speakingLight = false
     return false
   }
 
   /// Main thread only. With VoiceOver on, the voice and rate chosen for VoiceOver are used.
-  func say(_ text: String, zone: Zone? = nil, interrupt: Bool = false, reliability: Bool = false) {
+  func say(_ text: String, zone: Zone? = nil, interrupt: Bool = false, reliability: Bool = false, light: Bool = false) {
     if interrupt { synth.stopSpeaking(at: .immediate) }
     let u = AVSpeechUtterance(string: text)
     u.voice = AVSpeechSynthesisVoice(language: "it-IT")
@@ -54,6 +58,7 @@ final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
     deadline = CACurrentMediaTime() + min(6, 1 + Double(text.count) * 0.1)  // generous: ~2.5 s for an alert
     speakingZone = zone
     speakingReliability = reliability
+    speakingLight = light
     synth.speak(u)
   }
 
@@ -66,6 +71,7 @@ final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
       self.current = nil
       self.speakingZone = nil
       self.speakingReliability = false
+      self.speakingLight = false
     }
   }
 
@@ -147,9 +153,45 @@ final class GuideRecorder {
   func close() { dir = nil }
 
   func maybeSave(image: CVPixelBuffer, depth: DepthMap, camera: CameraSnapshot, floor: (y: Float, floor: Bool),
-                 features: [SIMD3<Float>], analysis: FrameAnalysis) {
+                 features: [SIMD3<Float>], analysis: FrameAnalysis, light: LightAnalysis?) {
+    guard let base = nextBase(image: image) else { return }
+    depth.values.withUnsafeBufferPointer { try? Data(buffer: $0).write(to: base.appendingPathExtension("depth")) }
+    let zones: [Any] = analysis.zones.map { h -> Any in
+      guard let h else { return NSNull() }
+      return ["distance": h.distance, "low": h.low, "area": h.area]
+    }
+    let meta: [String: Any] = [
+      "time": Date().timeIntervalSince1970,
+      "depthWidth": depth.width, "depthHeight": depth.height,
+      "floorY": floor.y, "floorClassified": floor.floor,
+      "scaleOk": analysis.scaleOk, "scaleA": analysis.scaleA, "scaleB": analysis.scaleB,
+      "scaleSource": analysis.scaleSource, "walls": analysis.walls,
+      "walkDirection": camera.walkDirection.map { [$0.x, $0.y, $0.z] } ?? NSNull(),
+      "fitInliers": analysis.fitInliers, "fitCandidates": analysis.fitCandidates,
+      "nearestFloor": analysis.nearestFloor.isFinite ? analysis.nearestFloor : -1, "zones": zones,
+      // ARKit feature points (world, metres): sparse but metric, to test a scale fit that does not rely on the floor
+      "features": features.flatMap { [$0.x, $0.y, $0.z] },
+    ]
+    write(meta.merging(Self.cameraMeta(camera)) { a, _ in a }.merging(Self.lightMeta(light)) { a, _ in a }, base)
+  }
+
+  /// Step 1.4: frames without depth analysis too (tracking lost, no floor), for the light-passage warning: in a dark
+  /// room the camera still sees a lit door. Image, pose and light only.
+  func maybeSaveLightOnly(image: CVPixelBuffer, camera: CameraSnapshot, cameraHeight: Float, light: LightAnalysis,
+                          arLight: Float?, tracking: String) {
+    guard let base = nextBase(image: image) else { return }
+    var meta: [String: Any] = ["time": Date().timeIntervalSince1970, "lightOnly": true, "cameraHeight": cameraHeight,
+                               "tracking": tracking, "arLight": arLight ?? -1,
+                               "walkDirection": camera.walkDirection.map { [$0.x, $0.y, $0.z] } ?? NSNull()]
+    meta.merge(Self.cameraMeta(camera)) { a, _ in a }
+    meta.merge(Self.lightMeta(light)) { a, _ in a }
+    write(meta, base)
+  }
+
+  /// Saves the image and returns the base path of the frame, at most twice a second and for 5 minutes.
+  private func nextBase(image: CVPixelBuffer) -> URL? {
     let now = CACurrentMediaTime()
-    guard let dir, count < 600, now - last >= 0.5 else { return }  // at most 5 minutes
+    guard let dir, count < 600, now - last >= 0.5 else { return nil }
     last = now
     count += 1
     let base = dir.appendingPathComponent(String(format: "%04d", count))
@@ -161,27 +203,23 @@ final class GuideRecorder {
                                             options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7]) {
       try? jpg.write(to: base.appendingPathExtension("jpg"))
     }
-    depth.values.withUnsafeBufferPointer { try? Data(buffer: $0).write(to: base.appendingPathExtension("depth")) }
+    return base
+  }
+
+  private static func cameraMeta(_ camera: CameraSnapshot) -> [String: Any] {
     let t = camera.transform, K = camera.intrinsics
-    let cols = [t.columns.0, t.columns.1, t.columns.2, t.columns.3].flatMap { [$0.x, $0.y, $0.z, $0.w] }
-    let kcols = [K.columns.0, K.columns.1, K.columns.2].flatMap { [$0.x, $0.y, $0.z] }
-    let zones: [Any] = analysis.zones.map { h -> Any in
-      guard let h else { return NSNull() }
-      return ["distance": h.distance, "low": h.low, "area": h.area]
-    }
-    let meta: [String: Any] = [
-      "time": Date().timeIntervalSince1970, "transform": cols, "intrinsics": kcols,
-      "imageWidth": camera.imageSize.width, "imageHeight": camera.imageSize.height,
-      "depthWidth": depth.width, "depthHeight": depth.height,
-      "floorY": floor.y, "floorClassified": floor.floor,
-      "scaleOk": analysis.scaleOk, "scaleA": analysis.scaleA, "scaleB": analysis.scaleB,
-      "scaleSource": analysis.scaleSource, "walls": analysis.walls,
-      "walkDirection": camera.walkDirection.map { [$0.x, $0.y, $0.z] } ?? NSNull(),
-      "fitInliers": analysis.fitInliers, "fitCandidates": analysis.fitCandidates,
-      "nearestFloor": analysis.nearestFloor.isFinite ? analysis.nearestFloor : -1, "zones": zones,
-      // ARKit feature points (world, metres): sparse but metric, to test a scale fit that does not rely on the floor
-      "features": features.flatMap { [$0.x, $0.y, $0.z] },
-    ]
+    return ["transform": [t.columns.0, t.columns.1, t.columns.2, t.columns.3].flatMap { [$0.x, $0.y, $0.z, $0.w] },
+            "intrinsics": [K.columns.0, K.columns.1, K.columns.2].flatMap { [$0.x, $0.y, $0.z] },
+            "imageWidth": camera.imageSize.width, "imageHeight": camera.imageSize.height]
+  }
+
+  private static func lightMeta(_ a: LightAnalysis?) -> [String: Any] {
+    guard let a else { return [:] }
+    return ["light": ["ambient": a.ambient, "feet": a.feet, "darkShare": a.darkShare, "brightShare": a.brightShare,
+                      "kind": a.kind?.rawValue ?? NSNull(), "front": a.front, "passage": a.passage] as [String: Any]]
+  }
+
+  private func write(_ meta: [String: Any], _ base: URL) {
     if let json = try? JSONSerialization.data(withJSONObject: meta) {
       try? json.write(to: base.appendingPathExtension("json"))
     }
@@ -205,6 +243,10 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   private var request: VNCoreMLRequest?
   private var busy = false
   private var trail: [(t: Double, p: SIMD3<Float>)] = []  // recent phone positions, for the walking direction
+  private var lastWalk: SIMD3<Float>?
+  private var lastLightRun: Double = 0
+  private var cameraHeight = LightTuning.defaultCameraHeight  // above the floor, kept from the last frame with floor
+  private var latestLight: LightAnalysis?  // for the recording of the next analysed frame
 
   // main
   private(set) var running = false
@@ -212,7 +254,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   private var startTime: Double = 0
   private var tracks: [[ZoneHit?]] = [[], [], []]
   private var lastSpoken: [Double] = [-100, -100, -100]
-  private var lastStep: [Int?] = [nil, nil, nil]  // distance step last announced per zone, while it stays occupied
+  private var lastStep: [Int?] = [nil, nil, nil]  // distance step per zone while it stays occupied (see alertIfNeeded)
   private var lastConfirmed: [Double] = [-100, -100, -100]
   private var lastHint: Double = -100
   private var uprightSince: Double?
@@ -220,6 +262,10 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   private var lastStatus: Double = 0
   private var lastAlertText = ""
   private var lastSuspendBuzz: Double = -100
+  private var lightWarning = LightWarning()
+  private var pendingLight: (kind: LightKind, at: Double)?
+  private var lastLightText = ""
+  private var lightView: LightAnalysis?  // latest light analysis, for the stat line
   private var inferences = 0
   private var state = "starting"
   private var stat = (frames: 0, scaleOk: 0, fromFeatures: 0, fresh: 0, inliers: 0, candidates: 0, msSum: 0.0)
@@ -242,7 +288,14 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       request.imageCropAndScaleOption = .scaleFill
       try self.log.open()
       self.inferQueue.sync { self.recorder.open(next: self.log.path) }
-      self.frameQueue.sync { self.request = request; self.busy = false }
+      self.frameQueue.sync {
+        self.request = request
+        self.busy = false
+        self.lastWalk = nil
+        self.lastLightRun = 0
+        self.cameraHeight = LightTuning.defaultCameraHeight
+        self.latestLight = nil
+      }
       DispatchQueue.main.async {
         guard self.running else {  // stopped while the model was loading
           self.frameQueue.async { self.request = nil }
@@ -313,6 +366,10 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     lastStatus = startTime
     lastAlertText = ""
     lastSuspendBuzz = -100
+    lightWarning = LightWarning()
+    pendingLight = nil
+    lastLightText = ""
+    lightView = nil
     inferences = 0
     state = "starting"
     stat = (0, 0, 0, 0, 0, 0, 0)
@@ -321,6 +378,8 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   // MARK: ARSessionDelegate (frameQueue)
 
   func session(_ session: ARSession, didUpdate frame: ARFrame) {
+    guard request != nil else { return }
+    lightStep(frame)
     guard !busy, let request else { return }
     let light = frame.lightEstimate.map { Float($0.ambientIntensity) }
     let tracking = frame.camera.trackingState
@@ -341,8 +400,10 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     let features = frame.rawFeaturePoints?.points ?? []
     busy = true
     let pixelBuffer = frame.capturedImage  // do not retain the ARFrame
+    lastWalk = walkDirection(frame)
     let camera = CameraSnapshot(transform: frame.camera.transform, intrinsics: frame.camera.intrinsics,
-                                imageSize: frame.camera.imageResolution, walkDirection: walkDirection(frame))
+                                imageSize: frame.camera.imageResolution, walkDirection: lastWalk)
+    let lightForRecording = latestLight
     inferQueue.async {
       let t0 = DispatchTime.now().uptimeNanoseconds
       let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up)
@@ -357,11 +418,77 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
                                                           now: CACurrentMediaTime()) }
       let ms = elapsedMs(since: t0)
       if let depth, let analysis {
-        self.recorder.maybeSave(image: pixelBuffer, depth: depth, camera: camera, floor: floor, features: features, analysis: analysis)
+        self.recorder.maybeSave(image: pixelBuffer, depth: depth, camera: camera, floor: floor, features: features,
+                                analysis: analysis, light: lightForRecording)
       }
       self.frameQueue.async { self.busy = false }
       DispatchQueue.main.async { self.handle(analysis, state: "active", detail: "", light: light, ms: ms) }
     }
+  }
+
+  /// Step 1.4, 5 times a second on any frame with a camera pose: brightness of the floor ahead. The phone's height
+  /// above the floor comes from the last frame where ARKit had the floor (in the dark it has none).
+  private func lightStep(_ frame: ARFrame) {
+    guard frame.timestamp - lastLightRun >= 1 / LightTuning.analysesPerSecond else { return }
+    lastLightRun = frame.timestamp
+    let tracking = frame.camera.trackingState
+    var normal = false, trackingText = "notAvailable"
+    switch tracking {
+    case .notAvailable: return  // no pose at all
+    case .limited(let r): trackingText = "\(r)"
+    case .normal: normal = true; trackingText = "normal"
+    }
+    let floor = normal ? Self.floorPlane(frame: frame) : nil
+    if let floor { cameraHeight = frame.camera.transform.columns.3.y - floor.y }
+    let pixelBuffer = frame.capturedImage
+    guard let ambient = frame.lightEstimate.map({ Float($0.ambientIntensity) }), let grid = Self.lumaGrid(pixelBuffer) else { return }
+    // The walking direction needs a reliable position: without tracking, where the camera points.
+    let camera = CameraSnapshot(transform: frame.camera.transform, intrinsics: frame.camera.intrinsics,
+                                imageSize: frame.camera.imageResolution, walkDirection: normal ? lastWalk : nil)
+    let analysis = LightAnalyzer.analyze(grid, camera: camera, cameraHeight: cameraHeight, ambient: ambient)
+    latestLight = analysis
+    if floor == nil {  // no depth analysis for this frame: recorded here
+      let height = cameraHeight
+      inferQueue.async {
+        self.recorder.maybeSaveLightOnly(image: pixelBuffer, camera: camera, cameraHeight: height, light: analysis,
+                                         arLight: ambient, tracking: trackingText)
+      }
+    }
+    DispatchQueue.main.async { self.handleLight(analysis) }
+  }
+
+  /// Luma and colour on the LightTuning grid, read straight from the camera's YCbCr planes (no conversion).
+  private static func lumaGrid(_ pb: CVPixelBuffer) -> LumaGrid? {
+    guard CVPixelBufferGetPlaneCount(pb) >= 2 else { return nil }
+    CVPixelBufferLockBaseAddress(pb, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(pb, .readOnly) }
+    guard let yBase = CVPixelBufferGetBaseAddressOfPlane(pb, 0), let cBase = CVPixelBufferGetBaseAddressOfPlane(pb, 1) else { return nil }
+    let yp = yBase.assumingMemoryBound(to: UInt8.self), cp = cBase.assumingMemoryBound(to: UInt8.self)
+    let yw = CVPixelBufferGetWidthOfPlane(pb, 0), yh = CVPixelBufferGetHeightOfPlane(pb, 0)
+    let cw = CVPixelBufferGetWidthOfPlane(pb, 1), ch = CVPixelBufferGetHeightOfPlane(pb, 1)
+    let yStride = CVPixelBufferGetBytesPerRowOfPlane(pb, 0), cStride = CVPixelBufferGetBytesPerRowOfPlane(pb, 1)
+    // ARKit gives full range ('420f'); video range is converted to the same scale, as the thresholds expect.
+    let video = CVPixelBufferGetPixelFormatType(pb) == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+    let gw = LightTuning.gridWidth, gh = LightTuning.gridHeight
+    var luma = [UInt8](repeating: 0, count: gw * gh), chroma = luma
+    for j in 0..<gh {
+      let y = min(yh - 1, Int((Float(j) + 0.5) * Float(yh) / Float(gh)))
+      let cy = min(ch - 1, y * ch / yh)
+      for i in 0..<gw {
+        let x = min(yw - 1, Int((Float(i) + 0.5) * Float(yw) / Float(gw)))
+        let cx = min(cw - 1, x * cw / yw)
+        var l = Float(yp[y * yStride + x])
+        var cb = Float(cp[cy * cStride + 2 * cx]) - 128, cr = Float(cp[cy * cStride + 2 * cx + 1]) - 128
+        if video {
+          l = (l - 16) * 255 / 219
+          cb *= 255 / 224
+          cr *= 255 / 224
+        }
+        luma[j * gw + i] = UInt8(max(0, min(255, l.rounded())))
+        chroma[j * gw + i] = UInt8(min(255, (cb * cb + cr * cr).squareRoot().rounded()))
+      }
+    }
+    return LumaGrid(values: luma, chroma: chroma, width: gw, height: gh)
   }
 
   /// Horizontal direction of the last second of movement, when the user has moved at least 15 cm; otherwise nil
@@ -447,6 +574,8 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       for zone in Zone.allCases where !tracks[zone.rawValue].isEmpty { tracks[zone.rawValue].removeFirst() }
     }
 
+    speakLightIfPossible(now: now)
+
     // Reliability messages wait for the voice to be free, so they never cut an alert short.
     let cut = voice.speaking && voice.speakingReliability && reliability.changePending
     if !voice.speaking || cut, let text = reliability.takeMessage(now: now) {
@@ -471,6 +600,10 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     // A zone is confirmed when it was hit in at least 3 of the last 5 frames. It is announced when it becomes
     // occupied and then only when the user gets a step closer (2 m → 1.5 m → 1 m → half a metre): with a message
     // every 2 s per zone the voice never stopped in a narrow flat (tests of 18/10).
+    // The step remembered is where the obstacle is now, not the nearest one announced: when the zone moves farther
+    // (another obstacle, or a false hit gone), getting closer again is announced. With the nearest one, a false hit
+    // half a metre ahead kept "davanti" silent for a whole walk in the kitchen (test of 18/10 night: 1 message ahead,
+    // 52 on the sides).
     var candidates: [(zone: Zone, hit: ZoneHit)] = []
     for zone in Zone.allCases {
       let i = zone.rawValue
@@ -488,10 +621,13 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     for c in candidates {
       let i = c.zone.rawValue
       let step = GuideVoice.step(c.hit.distance)
-      if let last = lastStep[i], step >= last { continue }  // nothing new: same distance or farther
+      if let last = lastStep[i], step >= last {  // nothing new: same distance or farther
+        lastStep[i] = step
+        continue
+      }
       guard now - lastSpoken[i] >= GuideTuning.zoneCooldown else { continue }
-      // Only something close straight ahead may cut a message short.
-      let urgent = c.zone == .ahead && c.hit.distance <= 1.0 && voice.speakingZone != .ahead
+      // Only something close straight ahead may cut a message short; never a light warning (agreed for step 1.4).
+      let urgent = c.zone == .ahead && c.hit.distance <= 1.0 && voice.speakingZone != .ahead && !voice.speakingLight
       if voice.speaking && !urgent { return }
       let text = GuideVoice.message(c.zone, c.hit)
       // Vibration and sound first: they are felt while the voice is still starting.
@@ -507,6 +643,38 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
                        reliability.level.rawValue, played.haptic ? 1 : 0, played.sound ? 1 : 0, ms))
       return
     }
+  }
+
+  // MARK: Light passages (main, step 1.4)
+
+  private func handleLight(_ a: LightAnalysis) {
+    guard running && sessionStarted else { return }
+    let now = CACurrentMediaTime()
+    lightView = a
+    if let kind = lightWarning.update(a, now: now) {
+      log.write("light", zone: kind.rawValue, distance: a.front,
+                String(format: "%@; feet %.0f, passage %.0f, share %.0f%%; light %@; reliability %@", kind.message,
+                       a.feet, a.passage, 100 * (kind == .dark ? a.darkShare : a.brightShare), lightText,
+                       reliability.level.rawValue))
+      pendingLight = (kind, now)
+    }
+    speakLightIfPossible(now: now)
+  }
+
+  /// A light warning waits for the voice to be free (it never cuts a message short) and is dropped when stale.
+  private func speakLightIfPossible(now: Double) {
+    guard let p = pendingLight else { return }
+    if now - p.at > LightTuning.speakWithin {
+      pendingLight = nil
+      log.write("light-dropped", p.kind.message)
+      return
+    }
+    guard !voice.speaking else { return }
+    pendingLight = nil
+    let played = feedback.play(.light)  // first, as with the obstacle alerts
+    voice.say(p.kind.message, light: true)
+    lastLightText = p.kind.message
+    log.write("light-voice", "\(p.kind.message); haptic \(played.haptic ? 1 : 0); waited \(String(format: "%.1f", now - p.at)) s")
   }
 
   private func buzzSuspended(now: Double) {
@@ -525,16 +693,21 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     }.joined(separator: "; ")
     // Written every second, also without analyses: the evening test reads light against tracking and scale here.
     let n = max(stat.frames, 1)
-    log.write("stat", String(format: "fps %.1f; infer+analysis %.0f ms; scale ok %d/%d (features %d, fresh %d); fit %d/%d; %@; %@; voice %@; light %@; tracking %@; reliability %@ %@",
+    // Light ahead (step 1.4): at the feet, and the share of the far view that is dark / bright.
+    let view = lightView.map { v in
+      String(format: "feet %.0f, dark %.0f%%, bright %.0f%%%@", v.feet, 100 * v.darkShare, 100 * v.brightShare,
+             v.kind.map { ", \($0.rawValue) passage" } ?? "")
+    } ?? "-"
+    log.write("stat", String(format: "fps %.1f; infer+analysis %.0f ms; scale ok %d/%d (features %d, fresh %d); fit %d/%d; %@; %@; voice %@; light %@; tracking %@; reliability %@ %@; light passage %@",
                              fps, stat.msSum / Double(n), stat.scaleOk, stat.frames, stat.fromFeatures, stat.fresh,
                              stat.inliers / n, stat.candidates / n, zones, MemoryProbe.thermal(),
                              voice.speaking ? "busy" : "free", lightText, state,
-                             reliability.level.rawValue, reliability.reason.rawValue))
+                             reliability.level.rawValue, reliability.reason.rawValue, view))
     let upright = uprightSince.map { now - $0 > 3 } ?? false
     var status: [String: Any] = [
       "state": upright && state == "active" ? "upright" : state, "fps": fps, "lastAlert": lastAlertText,
       "thermal": MemoryProbe.thermal(), "reliability": reliability.level.rawValue,
-      "reliabilityReason": reliability.reason.rawValue,
+      "reliabilityReason": reliability.reason.rawValue, "lastLight": lastLightText,
     ]
     if let l = reliability.light { status["light"] = l }
     onStatus?(status)

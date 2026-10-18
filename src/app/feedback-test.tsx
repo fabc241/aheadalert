@@ -1,5 +1,6 @@
 // MVP step 1.3: learn the guide's vibrations and sounds standing still, then check that they are told apart
 // (acceptance criteria 2 and 3: the right side at least 9 times out of 10). Reached from "Prove tecniche".
+// Step 1.4 adds the light-passage signal (three quick taps), in the list and in the vibration quiz.
 // Each series of 10 is saved to Documents/guide/feedback-quiz-<time>.csv (fetched with scripts/guide/fetch-logs.sh).
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -15,6 +16,7 @@ const NAME: Record<FeedbackKind, string> = {
   ahead: 'Davanti',
   right: 'Destra',
   suspended: 'Guida sospesa',
+  light: 'Cambio di luce',
 };
 
 const LEARN: { title: string; hint: string; kind: FeedbackKind; low?: boolean }[] = [
@@ -23,6 +25,7 @@ const LEARN: { title: string; hint: string; kind: FeedbackKind; low?: boolean }[
   { title: 'Destra', hint: 'Due colpi brevi; con le cuffie un suono a destra', kind: 'right' },
   { title: 'Davanti, basso', hint: 'Come davanti; con le cuffie il suono è più grave', kind: 'ahead', low: true },
   { title: 'Guida sospesa', hint: 'Due vibrazioni lunghe, senza suono', kind: 'suspended' },
+  { title: 'Cambio di luce', hint: 'Tre colpi brevi e rapidi, senza suono: zona buia o luminosa davanti', kind: 'light' },
 ];
 
 type Mode = 'haptic' | 'sound' | 'both';
@@ -89,7 +92,8 @@ export default function FeedbackTestScreen() {
   const waiting = !!current && !current.answer;
   const done = rounds.filter((r) => r.answer).length;
   const right = rounds.filter((r) => r.answer === r.kind).length;
-  const choices: FeedbackKind[] = mode === 'sound' ? ['left', 'ahead', 'right'] : ['left', 'ahead', 'right', 'suspended'];
+  const choices: FeedbackKind[] =
+    mode === 'sound' ? ['left', 'ahead', 'right'] : ['left', 'ahead', 'right', 'suspended', 'light'];
 
   function chooseMode(m: Mode) {
     setMode(m);

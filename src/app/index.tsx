@@ -2,6 +2,7 @@
 // Step 1.1: obstacle guide (start/stop); the native module speaks the alerts itself.
 // Step 1.2: reliability line (the native module speaks its changes too; VoiceOver reads it on touch only).
 // Step 1.3: the native module also vibrates (and plays a directional sound with headphones) with each alert.
+// Step 1.4: it also warns of a passage to a dark (or bright) zone ahead; the last warning is shown here.
 import { Redirect, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
@@ -41,6 +42,7 @@ type ReliabilityState = { level: Reliability; reason: ReliabilityReason } | null
 export default function HomeScreen() {
   const [state, setState] = useState<keyof typeof STATE_TEXT>('stopped');
   const [lastAlert, setLastAlert] = useState('');
+  const [lastLight, setLastLight] = useState('');
   const [reliability, setReliability] = useState<ReliabilityState>(null);
   const [error, setError] = useState('');
   const on = state !== 'stopped';
@@ -49,6 +51,7 @@ export default function HomeScreen() {
     const sub = Perception.addListener('onGuideStatus', (s) => {
       setState(s.state);
       if (s.lastAlert) setLastAlert(s.lastAlert);
+      if (s.lastLight) setLastLight(s.lastLight);
       // Shown once the start is over: before that the state line says what is happening.
       setReliability(
         s.reliability && s.reliabilityReason && s.reliabilityReason !== 'starting'
@@ -75,6 +78,7 @@ export default function HomeScreen() {
     }
     setState('loading');
     setLastAlert('');
+    setLastLight('');
     setReliability(null);
     try {
       await Perception.startGuide();
@@ -108,7 +112,7 @@ export default function HomeScreen() {
           hint={
             on
               ? 'Ferma gli avvisi e la fotocamera'
-              : 'Avvisa con voce e vibrazione degli ostacoli davanti e ai lati, entro 2 metri. Con le cuffie anche un suono dal lato dell’ostacolo. Tieni il telefono al petto, inclinato verso il basso'
+              : 'Avvisa con voce e vibrazione degli ostacoli davanti e ai lati, entro 2 metri, e del passaggio verso una zona buia o luminosa. Con le cuffie anche un suono dal lato dell’ostacolo. Tieni il telefono al petto, inclinato verso il basso'
           }
           disabled={state === 'loading'}
           onPress={toggleGuide}
@@ -122,6 +126,9 @@ export default function HomeScreen() {
           ) : null}
           {!suspended ? <Text style={styles.status}>{error ? `Errore: ${error}` : STATE_TEXT[state]}</Text> : null}
           {on && lastAlert && !suspended ? <Text style={styles.text}>Ultimo avviso: {lastAlert}</Text> : null}
+          {on && lastLight ? (
+            <Text style={[styles.text, suspended && styles.suspendedLight]}>Luce: {lastLight}</Text>
+          ) : null}
         </View>
         <BigButton
           title="Prove tecniche"
@@ -141,6 +148,7 @@ const styles = StyleSheet.create({
   // Suspended guide: solid yellow, visible at the edge of the field of view.
   statusBoxSuspended: { backgroundColor: YELLOW },
   suspendedText: { color: BLACK, fontSize: 28, fontWeight: '800' },
+  suspendedLight: { color: BLACK, fontWeight: '700' },
   status: { color: WHITE, fontSize: 24, fontWeight: '700' },
   text: { color: WHITE, fontSize: 22 },
 });
