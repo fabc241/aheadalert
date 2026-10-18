@@ -40,15 +40,15 @@ yarn-error.*
 /ios
 /android
 
-# Fase 0: modelli scaricati e binari locali
-scripts/fase0/modelli/
-scripts/fase0/depth-bench/depth-bench
-scripts/fase0/*.log
-scripts/fase0/immagini-reali/
-scripts/fase0/risultati/profondita/
+# Phase 0: downloaded models and local binaries
+scripts/phase0/models/
+scripts/phase0/depth-bench/depth-bench
+scripts/phase0/*.log
+# Personal test photos and everything derived from them (never committed)
+scripts/phase0/real-photos/
+scripts/phase0/results/depth/
+# Phase 0B: results fetched from the iPhone (contain real camera shots)
+scripts/phase0/results/iphone/
 
-# QVAC: worker bundle e manifest rigenerati a ogni prebuild
+# QVAC: worker bundle and manifest regenerated on every prebuild
 /qvac
-
-# Fase 0B: risultati scaricati dall'iPhone (contengono scatti reali)
-scripts/fase0/risultati/iphone/

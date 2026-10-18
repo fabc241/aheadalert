@@ -1,10 +1,10 @@
-// Fase 0A (Mac): Depth Anything V2 Small (Core ML, Float16).
-// Misura i tempi per unità di calcolo (solo CPU, CPU+GPU, CPU+Neural Engine, tutte)
-// e salva le mappe di profondità come PNG in scala di grigi (chiaro = vicino).
+// Phase 0A (Mac): Depth Anything V2 Small (Core ML, Float16).
+// Measures timing per compute unit (CPU only, CPU+GPU, CPU+Neural Engine, all)
+// and saves the depth maps as grayscale PNGs (bright = near).
 //
-// Compilazione e uso (dalla cartella scripts/fase0):
+// Build and usage (from scripts/phase0):
 //   swiftc -O depth-bench/main.swift -o depth-bench/depth-bench
-//   ./depth-bench/depth-bench modelli/DepthAnythingV2SmallF16.mlpackage immagini-reali risultati/profondita
+//   ./depth-bench/depth-bench models/DepthAnythingV2SmallF16.mlpackage real-photos results/depth
 import CoreML
 import CoreVideo
 import Foundation
@@ -18,7 +18,7 @@ func fail(_ msg: String) -> Never {
 }
 
 let args = CommandLine.arguments
-guard args.count == 4 else { fail("uso: depth-bench <modello.mlpackage> <cartella immagini> <cartella output>") }
+guard args.count == 4 else { fail("usage: depth-bench <model.mlpackage> <images folder> <output folder>") }
 let packageURL = URL(fileURLWithPath: args[1])
 let imagesURL = URL(fileURLWithPath: args[2])
 let outURL = URL(fileURLWithPath: args[3])
@@ -26,7 +26,7 @@ try FileManager.default.createDirectory(at: outURL, withIntermediateDirectories:
 
 func loadCGImage(_ url: URL) -> CGImage {
   guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-        let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { fail("immagine non leggibile: \(url.path)") }
+        let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { fail("unreadable image: \(url.path)") }
   return img
 }
 
@@ -35,7 +35,7 @@ func ms(_ start: UInt64) -> Double { Double(DispatchTime.now().uptimeNanoseconds
 func median(_ v: [Double]) -> Double { let s = v.sorted(); return s[s.count / 2] }
 func p90(_ v: [Double]) -> Double { let s = v.sorted(); return s[min(s.count - 1, Int(Double(s.count) * 0.9))] }
 
-/// Legge l'output (immagine Float16/Float32 o MLMultiArray) come array di Float con dimensioni.
+/// Reads the output (Float16/Float32 image or MLMultiArray) as a Float array with its dimensions.
 func depthValues(_ value: MLFeatureValue) -> (values: [Float], width: Int, height: Int) {
   if let pb = value.imageBufferValue {
     CVPixelBufferLockBaseAddress(pb, .readOnly)
@@ -56,7 +56,7 @@ func depthValues(_ value: MLFeatureValue) -> (values: [Float], width: Int, heigh
         case kCVPixelFormatType_OneComponent8:
           out[y * w + x] = Float(row.assumingMemoryBound(to: UInt8.self)[x])
         default:
-          fail("formato pixel di output non gestito: \(format)")
+          fail("unsupported output pixel format: \(format)")
         }
       }
     }
@@ -69,7 +69,7 @@ func depthValues(_ value: MLFeatureValue) -> (values: [Float], width: Int, heigh
     for i in 0..<(w * h) { out[i] = arr[i].floatValue }
     return (out, w, h)
   }
-  fail("tipo di output non gestito")
+  fail("unsupported output type")
 }
 
 func savePNG(_ d: (values: [Float], width: Int, height: Int), to url: URL) {
@@ -87,10 +87,10 @@ func savePNG(_ d: (values: [Float], width: Int, height: Int), to url: URL) {
   CGImageDestinationFinalize(dest)
 }
 
-// Compilazione del modello (una volta)
+// Model compilation (once)
 var t0 = DispatchTime.now().uptimeNanoseconds
 let compiledURL = try MLModel.compileModel(at: packageURL)
-print(String(format: "Compilazione modello: %.0f ms", ms(t0)))
+print(String(format: "Model compilation: %.0f ms", ms(t0)))
 
 let imageFiles = try FileManager.default.contentsOfDirectory(at: imagesURL, includingPropertiesForKeys: nil)
   .filter { ["jpg", "jpeg", "png"].contains($0.pathExtension.lowercased()) }
@@ -98,14 +98,14 @@ let imageFiles = try FileManager.default.contentsOfDirectory(at: imagesURL, incl
 let cgImages = imageFiles.map(loadCGImage)
 
 let units: [(String, MLComputeUnits)] = [
-  ("Solo CPU", .cpuOnly),
+  ("CPU only", .cpuOnly),
   ("CPU + GPU", .cpuAndGPU),
   ("CPU + Neural Engine", .cpuAndNeuralEngine),
-  ("Tutte (.all)", .all),
+  ("All (.all)", .all),
 ]
 
-var report = ["# Fase 0A – Depth Anything V2 Small F16 (Core ML) su Mac", "",
-              "| Unità di calcolo | Caricamento | Mediana | 90° percentile | fps (mediana) |",
+var report = ["# Phase 0A – Depth Anything V2 Small F16 (Core ML) on Mac", "",
+              "| Compute unit | Load | Median | 90th percentile | fps (median) |",
               "|---|---|---|---|---|"]
 
 for (name, cu) in units {
@@ -118,7 +118,7 @@ for (name, cu) in units {
   let inputName = model.modelDescription.inputDescriptionsByName.keys.first!
   let outputName = model.modelDescription.outputDescriptionsByName.keys.first!
   guard let constraint = model.modelDescription.inputDescriptionsByName[inputName]?.imageConstraint else {
-    fail("l'input non è un'immagine")
+    fail("the model input is not an image")
   }
   if cu == .cpuOnly {
     print("Input '\(inputName)': \(constraint.pixelsWide)x\(constraint.pixelsHigh); output '\(outputName)'")
@@ -130,7 +130,7 @@ for (name, cu) in units {
     return try MLDictionaryFeatureProvider(dictionary: [inputName: fv])
   }
 
-  // Riscaldamento, poi 30 inferenze ripetute su tutte le immagini a rotazione
+  // Warm-up, then 30 inferences cycling through all the images
   for i in 0..<3 { _ = try model.prediction(from: inputs[i % inputs.count]) }
   var times: [Double] = []
   for i in 0..<30 {
@@ -139,7 +139,7 @@ for (name, cu) in units {
     times.append(ms(t0))
     if cu == .all && i < inputs.count, let v = out.featureValue(for: outputName) {
       let name = imageFiles[i].deletingPathExtension().lastPathComponent
-      savePNG(depthValues(v), to: outURL.appendingPathComponent("\(name)-profondita.png"))
+      savePNG(depthValues(v), to: outURL.appendingPathComponent("\(name)-depth.png"))
     }
   }
   let med = median(times)
@@ -149,6 +149,6 @@ for (name, cu) in units {
 }
 
 report.append("")
-report.append("Nota: misure su Mac M4, indicative. La scelta Neural Engine/GPU va fatta sull'iPhone 13.")
-try report.joined(separator: "\n").write(to: outURL.appendingPathComponent("tempi.md"), atomically: true, encoding: .utf8)
-print("Mappe salvate in \(outURL.path)")
+report.append("Note: Mac M4 measurements, indicative only. The Neural Engine/GPU choice must be made on the iPhone 13.")
+try report.joined(separator: "\n").write(to: outURL.appendingPathComponent("timing.md"), atomically: true, encoding: .utf8)
+print("Maps saved in \(outURL.path)")

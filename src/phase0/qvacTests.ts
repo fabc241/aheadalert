@@ -1,4 +1,5 @@
-// Fase 0B (iPhone 13): prove QVAC su dispositivo, stessi modelli e impostazioni della Fase 0A sul Mac.
+// Phase 0B (iPhone 13): on-device QVAC tests, same models and settings as Phase 0A on the Mac.
+// Report lines and status messages are in Italian: they are shown in the app and read by VoiceOver.
 import {
   classify,
   completion,
@@ -16,18 +17,18 @@ import {
 import Perception from '../../modules/perception';
 
 export type Reporter = {
-  /** riga del rapporto (markdown) */
+  /** report line (markdown) */
   log: (line: string) => void;
-  /** stato corrente, mostrato in grande e letto da VoiceOver */
+  /** current status, shown in large type and read by VoiceOver */
   status: (text: string) => void;
 };
 
 const DOCS = Perception.documentsPath;
-const FASE0 = `${DOCS}/fase0`;
-export const PHOTOS = Array.from({ length: 14 }, (_, i) => `${FASE0}/immagini-reali/${String(i + 1).padStart(2, '0')}.jpg`);
-const SIGNS = [`${FASE0}/immagini/cartello.png`, `${FASE0}/immagini/cartello_buio.png`];
+const PHASE0 = `${DOCS}/phase0`;
+export const PHOTOS = Array.from({ length: 14 }, (_, i) => `${PHASE0}/real-photos/${String(i + 1).padStart(2, '0')}.jpg`);
+const SIGNS = [`${PHASE0}/images/cartello.png`, `${PHASE0}/images/cartello_buio.png`];
 
-// Stesse richieste della Fase 0A, per confrontare le risposte con il Mac
+// Same prompts as Phase 0A, to compare the answers with the Mac
 const PROMPT_DESCR = 'Describe this image in two short sentences.';
 const PROMPT_STEPS =
   'Are there any stairs, steps, escalators or curbs in this image? Answer "yes" or "no" first, then say where in one short sentence.';
@@ -48,7 +49,7 @@ function progress(r: Reporter, label: string) {
   };
 }
 
-/** Esegue `fn` misurando il picco di memoria (phys_footprint) di tutta l'app, worker QVAC compreso. */
+/** Runs `fn` while measuring the peak memory (phys_footprint) of the whole app, QVAC worker included. */
 async function withPeak<T>(fn: () => Promise<T>): Promise<{ value: T; peakMB: number }> {
   Perception.startMemorySampler();
   try {
@@ -66,7 +67,7 @@ function memLine(label: string) {
 }
 
 export function checkFiles(): string[] {
-  return [...PHOTOS, ...SIGNS, `${FASE0}/DepthAnythingV2SmallF16.mlpackage`, `${FASE0}/modelli/mobilenetv3_3class_v3_fp16.gguf`].filter((p) => !Perception.fileExists(p));
+  return [...PHOTOS, ...SIGNS, `${PHASE0}/DepthAnythingV2SmallF16.mlpackage`, `${PHASE0}/models/mobilenetv3_3class_v3_fp16.gguf`].filter((p) => !Perception.fileExists(p));
 }
 
 // --- VisionPsy Flash ---------------------------------------------------------------------------
@@ -115,7 +116,7 @@ async function toItalian(modelId: string, en: string) {
   return { it: clean(it), ms: Date.now() - t };
 }
 
-/** VisionPsy Flash sulle 14 foto (stesse richieste del Mac) + traduzione Bergamot. */
+/** VisionPsy Flash on the 14 photos (same prompts as on the Mac) + Bergamot translation. */
 export async function testVisionPsy(r: Reporter) {
   r.log('\n## VisionPsy Nano 460M Flash (Q4_K_M) + Bergamot EN→IT – 14 foto');
   r.log(memLine('Prima'));
@@ -163,7 +164,7 @@ export async function testVisionPsy(r: Reporter) {
   r.log(memLine('Dopo lo scaricamento dei modelli'));
 }
 
-// --- Sintesi vocale ---------------------------------------------------------------------------
+// --- Text to speech ----------------------------------------------------------------------------
 
 function loadSupertonic(r: Reporter) {
   return loadModel({
@@ -185,7 +186,7 @@ async function speak(modelId: string, text: string, file: string) {
 
 export async function testTTS(r: Reporter) {
   r.log('\n## Sintesi vocale Supertonic 3 (italiano, voce F1, 5 passi)');
-  const frasi = [
+  const phrases = [
     'Attenzione: gradino in discesa a un metro, sulla sinistra.',
     'Davanti a te c’è un corridoio con una porta aperta a destra e una sedia vicino al muro.',
   ];
@@ -194,12 +195,12 @@ export async function testTTS(r: Reporter) {
     r.status('Carico Supertonic…');
     const tts = await loadSupertonic(r);
     r.log(`Caricamento: ${s(Date.now() - t)}`);
-    for (const [i, frase] of frasi.entries()) {
+    for (const [i, phrase] of phrases.entries()) {
       r.status(`Sintesi frase ${i + 1}…`);
-      const file = `${FASE0}/risultati/voce-iphone-${i + 1}.wav`;
-      const x = await speak(tts, frase, file);
-      r.log(`- "${frase}" → ${s(x.ms)} per ${x.seconds.toFixed(1).replace('.', ',')} s di audio (${(x.ms / 1000 / x.seconds).toFixed(2)}× tempo reale)`);
-      // In avvio automatico dal Mac non suona: si misura soltanto (l'ascolto lo fa l'utente dal pulsante)
+      const file = `${PHASE0}/results/voice-iphone-${i + 1}.wav`;
+      const x = await speak(tts, phrase, file);
+      r.log(`- "${phrase}" → ${s(x.ms)} per ${x.seconds.toFixed(1).replace('.', ',')} s di audio (${(x.ms / 1000 / x.seconds).toFixed(2)}× tempo reale)`);
+      // When auto-run from the Mac it stays silent and only measures (the user listens via the button)
       if (!Perception.autoRun) {
         r.status(`Ascolta la frase ${i + 1}`);
         await Perception.playAudio(file);
@@ -219,8 +220,8 @@ export async function testOCR(r: Reporter) {
     const x = await Perception.recognizeText(img);
     r.log(`- ${name(img)}: ${s(x.ms)} → ${x.lines.map((l) => `"${l.text}"`).join(' | ') || '(nessun testo)'}`);
   }
-  // Con canvasSize 2560 (predefinito) e 1280 la lettura del primo cartello porta l'app oltre i ~2 GB e iOS la chiude.
-  // Dalla più piccola alla più grande: se iOS chiude l'app, nel registro restano le misure già fatte.
+  // With canvasSize 2560 (default) and 1280, reading the first sign pushes the app past ~2 GB and iOS kills it.
+  // Smallest to largest: if iOS kills the app, the measurements already taken stay in the report.
   for (const canvasSize of [640, 960]) {
     r.log(`QVAC OCR_LATIN (it, senza rotazioni, magRatio 1, canvasSize ${canvasSize}):`);
     const { peakMB } = await withPeak(async () => {
@@ -251,16 +252,16 @@ export async function testOCR(r: Reporter) {
   }
 }
 
-// --- Classificazione ----------------------------------------------------------------------------
+// --- Classification -----------------------------------------------------------------------------
 
 export async function testClassify(r: Reporter) {
   r.log('\n## Classificazione MobileNetV3-Small (inclusa) – mediana su 10 esecuzioni');
   const t = Date.now();
   r.status('Carico classificatore…');
-  // I pesi inclusi nel pacchetto npm non entrano nel bundle mobile: li copia scripts/fase0/copia-su-iphone.sh
+  // The weights shipped in the npm package are not in the mobile bundle: scripts/phase0/copy-to-iphone.sh copies them
   const cls = await loadModel({
     modelType: 'ggml-classification',
-    modelConfig: { modelPath: `${FASE0}/modelli/mobilenetv3_3class_v3_fp16.gguf` },
+    modelConfig: { modelPath: `${PHASE0}/models/mobilenetv3_3class_v3_fp16.gguf` },
   });
   r.log(`Caricamento: ${s(Date.now() - t)}`);
   const all: number[] = [];
@@ -284,13 +285,13 @@ export async function testClassify(r: Reporter) {
   await unloadModel({ modelId: cls });
 }
 
-// --- "Cosa ho davanti?" dal vivo -------------------------------------------------------------
+// --- "What is in front of me?" live ----------------------------------------------------------
 
 /**
- * Percorso completo come nell'MVP, a freddo: fotogramma ARKit → VisionPsy (caricato e poi scaricato)
- * → Bergamot → Supertonic → riproduzione. Misura il tempo percepito dall'utente.
+ * Full MVP path, cold: ARKit frame → VisionPsy (loaded, then unloaded) → Bergamot → Supertonic → playback.
+ * Measures the latency the user perceives.
  */
-export async function testCosaHoDavanti(r: Reporter) {
+export async function testWhatIsAhead(r: Reporter) {
   r.log('\n## "Cosa ho davanti?" – percorso completo a freddo su fotogramma reale');
   const t0 = Date.now();
   const steps: string[] = [];
@@ -316,7 +317,7 @@ export async function testCosaHoDavanti(r: Reporter) {
     await unloadModel({ modelId: tr, clearStorage: false });
     t = step('traduzione (con caricamento)', t);
     const tts = await loadSupertonic(r);
-    const file = `${FASE0}/risultati/cosa-ho-davanti.wav`;
+    const file = `${PHASE0}/results/what-is-ahead.wav`;
     await speak(tts, it.it, file);
     await unloadModel({ modelId: tts, clearStorage: false });
     t = step('voce (con caricamento)', t);

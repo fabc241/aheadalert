@@ -1,8 +1,8 @@
 Pod::Spec.new do |s|
   s.name           = 'Perception'
   s.version        = '0.1.0'
-  s.summary        = 'Modulo percezione (ARKit + Core ML) – Fase 0B'
-  s.description    = 'Misure su dispositivo: profondità, memoria, temperatura, fotogrammi ARKit, audio.'
+  s.summary        = 'Perception module (ARKit + Core ML) – Phase 0B'
+  s.description    = 'On-device measurements: depth, memory, thermal state, ARKit frames, audio.'
   s.author         = ''
   s.homepage       = 'https://example.invalid'
   s.platforms      = { :ios => '17.0' }

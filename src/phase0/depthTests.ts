@@ -1,4 +1,5 @@
-// Fase 0B (iPhone 13): Depth Anything V2 Small su Core ML, per unità di calcolo.
+// Phase 0B (iPhone 13): Depth Anything V2 Small on Core ML, per compute unit.
+// Report lines are in Italian: they are shown in the app.
 import Perception, { type DepthUnits, type LiveResult } from '../../modules/perception';
 import type { Reporter } from './qvacTests';
 
@@ -16,7 +17,7 @@ export async function testDepthPhotos(r: Reporter) {
   for (const x of rows)
     r.log(`| ${x.label} | ${Math.round(x.loadMs)} ms | ${n(x.medianMs)} ms | ${n(x.p90Ms)} ms | ${n(x.fps)} | ${x.thermal} |`);
   r.log(`Input ${rows[0]?.input}. Mac M4: Neural Engine 22,5 ms, GPU 40,5 ms, CPU 48,9 ms.`);
-  r.log('Mappe del Neural Engine salvate in risultati/profondita-iphone (confronto a occhio con il Mac).');
+  r.log('Mappe del Neural Engine salvate in results/depth-iphone (confronto a occhio con il Mac).');
 }
 
 function liveTable(r: Reporter, rows: LiveResult[]) {
@@ -30,7 +31,7 @@ function liveTable(r: Reporter, rows: LiveResult[]) {
     );
 }
 
-/** Fotogrammi ARKit dal vivo, una o più unità in sequenza. Restituisce l'unità più veloce. */
+/** Live ARKit frames, one or more units in sequence. Returns the fastest unit. */
 export async function testDepthLive(r: Reporter, units: DepthUnits[], seconds: number): Promise<DepthUnits | undefined> {
   r.log(`\n## Profondità dal vivo su fotogrammi ARKit – ${seconds} s per unità`);
   r.log('Fotocamera ARKit 1920×1440 → Vision (ridimensionamento a 518×392) → Depth Anything → zone sx/centro/dx.');

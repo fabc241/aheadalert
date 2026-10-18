@@ -1,22 +1,23 @@
-// Fase 0B: schermata di prova su iPhone 13. Pulsanti grandi, alto contrasto, stato annunciato da VoiceOver.
-// I risultati vanno in Documents/fase0/risultati/fase0b-<data>.md (copiati sul Mac con scripts/fase0/scarica-da-iphone.sh).
+// Phase 0B: test screen for the iPhone 13. Large buttons, high contrast, status announced by VoiceOver.
+// The UI is in Italian (the target user is Italian). Results go to Documents/phase0/results/phase0b-<date>.md
+// (fetched to the Mac with scripts/phase0/fetch-from-iphone.sh).
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import Perception, { type DepthUnits } from './modules/perception';
-import { testDepthLive, testDepthPhotos } from './src/fase0/depthTests';
+import { testDepthLive, testDepthPhotos } from './src/phase0/depthTests';
 import {
   checkFiles,
   testClassify,
-  testCosaHoDavanti,
+  testWhatIsAhead,
   testOCR,
   testTTS,
   testVisionPsy,
   type Reporter,
-} from './src/fase0/qvacTests';
+} from './src/phase0/qvacTests';
 
-const REPORT = `${Perception.documentsPath}/fase0/risultati/fase0b-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.md`;
+const REPORT = `${Perception.documentsPath}/phase0/results/phase0b-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.md`;
 
 type Test = { id: string; title: string; hint: string; run: (r: Reporter) => Promise<unknown> };
 
@@ -35,7 +36,7 @@ export default function App() {
         `memoria disponibile all'app ${Math.round(info.availableMB)} MB, temperatura ${info.thermal}`,
     ];
     const missing = checkFiles();
-    if (missing.length) head.push(`⚠️ File mancanti (${missing.length}): eseguire scripts/fase0/copia-su-iphone.sh sul Mac`);
+    if (missing.length) head.push(`⚠️ File mancanti (${missing.length}): eseguire scripts/phase0/copy-to-iphone.sh sul Mac`);
     report.current = head;
     setLines(head);
     const sub = Perception.addListener('onLiveProgress', (p) =>
@@ -51,7 +52,7 @@ export default function App() {
     log: (line) => {
       report.current.push(line);
       setLines((l) => [...l.slice(-60), line]);
-      // salvato subito: se iOS chiude l'app, il registro fino a quel punto resta
+      // saved right away: if iOS kills the app, the report up to that point is kept
       Perception.writeText(REPORT, report.current.join('\n') + '\n').catch(() => {});
     },
     status: setStatus,
@@ -82,9 +83,9 @@ export default function App() {
   }
 
   const tests: Test[] = [
-    { id: 'profondita-foto', title: 'Profondità su foto', hint: '4 unità di calcolo, circa 1 minuto', run: testDepthPhotos },
+    { id: 'depth-photos', title: 'Profondità su foto', hint: '4 unità di calcolo, circa 1 minuto', run: testDepthPhotos },
     {
-      id: 'profondita-vivo',
+      id: 'depth-live',
       title: 'Profondità dal vivo',
       hint: 'Fotocamera: 4 unità × 30 secondi. Tieni il telefono davanti a te e muovilo',
       run: async (r) => {
@@ -92,19 +93,19 @@ export default function App() {
       },
     },
     {
-      id: 'profondita-lunga',
+      id: 'depth-long',
       title: 'Profondità prova lunga',
       hint: '5 minuti con l’unità più veloce: temperatura e stabilità',
       run: (r) => testDepthLive(r, [bestUnit.current], 300),
     },
-    { id: 'cosa-ho-davanti', title: 'Cosa ho davanti?', hint: 'Scatta, descrive, traduce e legge ad alta voce', run: testCosaHoDavanti },
-    { id: 'descrizioni', title: 'Descrizioni 14 foto', hint: 'VisionPsy Flash + traduzione, alcuni minuti', run: testVisionPsy },
+    { id: 'what-is-ahead', title: 'Cosa ho davanti?', hint: 'Scatta, descrive, traduce e legge ad alta voce', run: testWhatIsAhead },
+    { id: 'descriptions', title: 'Descrizioni 14 foto', hint: 'VisionPsy Flash + traduzione, alcuni minuti', run: testVisionPsy },
     { id: 'ocr', title: 'Lettura cartelli', hint: 'OCR sui due cartelli di prova', run: testOCR },
-    { id: 'voce', title: 'Voce italiana', hint: 'Supertonic 3, due frasi da ascoltare', run: testTTS },
-    { id: 'classificazione', title: 'Classificazione', hint: 'MobileNetV3, solo tempi', run: testClassify },
+    { id: 'voice', title: 'Voce italiana', hint: 'Supertonic 3, due frasi da ascoltare', run: testTTS },
+    { id: 'classification', title: 'Classificazione', hint: 'MobileNetV3, solo tempi', run: testClassify },
   ];
 
-  // Avvio automatico dal Mac (FASE0_AUTO=profondita-foto,descrizioni,…): una prova dopo l'altra.
+  // Auto-run from the Mac (PHASE0_AUTO=depth-photos,descriptions,…): one test after another.
   useEffect(() => {
     const ids = Perception.autoRun.split(',').map((x) => x.trim()).filter(Boolean);
     if (!ids.length) return;

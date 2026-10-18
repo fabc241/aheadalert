@@ -1,6 +1,6 @@
-# Fase 0c – SmolVLM2 su foto reali – 2026-10-17T14:27:50.527Z
+# Phase 0c – SmolVLM2 on real photos – 2026-10-17T14:27:50.527Z
 
-| Foto | Descrizione (IT, tradotta) | Scale/gradini? (EN) | Tempo descr. |
+| Photo | Description (IT, translated) | Stairs/steps? (EN) | Description time |
 |---|---|---|---|
 | 01.jpg | Una scala in legno con un tappeto grigio in una stanza con pareti bianche e una pianta in vaso. | yes. | 0.6 s |
 | 02.jpg | Una scena di strada presenta edifici con piante in vaso che fiancheggiano la strada, creando un'atmosfera affascinante e tranquilla. | No. | 0.4 s |
@@ -17,7 +17,7 @@
 | 13.jpg | L'immagine dispone di un corridoio lungo e stretto con un'accogliente area salotto all'estremità. Le pareti sono adornate con varie piante appese, creando un'atmosfera rilassante. Un tappeto è posizionato sul pavimento, aggiungendo calore allo spazio. | No. | 0.6 s |
 | 14.jpg | L'immagine mostra un disimpegno con un apparecchio luminoso appeso e una stanza scura con un letto visibile attraverso la porta. | No. | 0.5 s |
 
-## Testo originale inglese
+## Original English text
 - **01.jpg**: A staircase made of wood with a gray carpet in a room with white walls and a potted plant.
 - **02.jpg**: A street scene features buildings with potted plants lining the street, creating a charming and tranquil atmosphere.
 - **03.jpg**: A view of a city from a viewpoint overlooking a mountain range, with the city visible in the distance.
@@ -33,25 +33,25 @@
 - **13.jpg**: The image features a long, narrow hallway with a cozy seating area at the end. The walls are adorned with various hanging plants, creating a relaxing atmosphere. A rug is placed on the floor, adding warmth to the space.
 - **14.jpg**: The image shows a hallway with a hanging light fixture and a dark room with a bed visible through the doorway.
 
-## Valutazione manuale (confronto con il contenuto reale delle foto)
-Scale/gradini/scale mobili/cordoli presenti in 01–08, assenti in 09–14.
+## Manual evaluation (against the actual content of the photos)
+Stairs/steps/escalators/curbs present in 01–08, absent in 09–14.
 
-| Foto | Realtà | Risposta "scale?" | Esito | Note sulla descrizione |
+| Photo | Reality | "Stairs?" answer | Result | Notes on the description |
 |---|---|---|---|---|
-| 01 | scala sospesa in legno | sì | ✅ | "tappeto grigio" inventato (pavimento in legno) |
-| 02 | lunga scalinata in salita | no | ❌ | scalinata omessa anche nella descrizione |
-| 03 | scale in pietra a destra | sì | ✅ | scale omesse nella descrizione |
-| 04 | scalinata in discesa | sì | ✅ | non dice che scende |
-| 05 | scala mobile in discesa | no | ❌ | descrizione dice "porta al piano superiore": direzione sbagliata |
-| 06 | cordoli e spartitraffico | no | ❌ | cordoli non citati |
-| 07 | gradino del marciapiede | no | ❌ | "zaino" invece di borsa; gradino non citato |
-| 08 | cordolo del marciapiede | no | ❌ | graffiti attribuiti all'albero |
-| 09 | camera buia (foto iPhone) | no | ✅ | descrizione corretta nonostante il buio |
-| 10 | bagno molto buio (foto iPhone) | no | ✅ | descrizione corretta |
-| 11 | soggiorno buio con camino | no | ✅ | "fire pit" per camino |
-| 12 | galleria in penombra con bar | no | ✅ | legge "Cafe" |
-| 13 | corridoio luminoso | no | ✅ | corretta (gatto non citato) |
-| 14 | disimpegno scuro | no | ✅ | letto inventato |
+| 01 | floating wooden staircase | yes | ✅ | hallucinated "gray carpet" (wooden floor) |
+| 02 | long ascending flight of steps | no | ❌ | steps also missing from the description |
+| 03 | stone steps on the right | yes | ✅ | steps missing from the description |
+| 04 | descending flight of steps | yes | ✅ | does not say it goes down |
+| 05 | descending escalator | no | ❌ | description says "leading up to the second level": wrong direction |
+| 06 | curbs and traffic island | no | ❌ | curbs not mentioned |
+| 07 | pavement step | no | ❌ | "backpack" instead of a handbag; step not mentioned |
+| 08 | pavement curb | no | ❌ | graffiti attributed to the tree |
+| 09 | dark bedroom (iPhone photo) | no | ✅ | correct description despite the dark |
+| 10 | very dark bathroom (iPhone photo) | no | ✅ | correct description |
+| 11 | dark living room with fireplace | no | ✅ | "fire pit" for a fireplace |
+| 12 | dim arcade with a bar | no | ✅ | reads "Cafe" |
+| 13 | bright hallway | no | ✅ | correct (cat not mentioned) |
+| 14 | dark hallway | no | ✅ | hallucinated bed |
 
-**Gradini riconosciuti: 3 su 8 (5 mancati, incluse una scalinata evidente e tutti i cordoli). Nessun falso allarme su 6 foto senza gradini.**
-Conclusione: SmolVLM2 500M è utile per una descrizione generale indicativa (buona anche al buio), ma **non è affidabile per gradini, cordoli e direzione delle scale**: non deve mai essere usato come avviso di sicurezza.
+**Steps recognised: 3 out of 8 (5 missed, including an obvious flight of steps and every curb). No false alarms on the 6 photos without steps.**
+Conclusion: SmolVLM2 500M is useful for an indicative general description (good even in the dark), but **it is not reliable for steps, curbs or stair direction**: it must never be used as a safety alert.

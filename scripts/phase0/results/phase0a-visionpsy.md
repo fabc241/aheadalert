@@ -1,8 +1,8 @@
-# Fase 0A – VisionPsy Nano 460M su foto reali – 2026-10-17T15:05:56.536Z
+# Phase 0A – VisionPsy Nano 460M on real photos – 2026-10-17T15:05:56.536Z
 
-## Flash (Q4_K_M) – primo token medio 0.99 s, descrizione media 1.23 s (Mac M4)
+## Flash (Q4_K_M) – mean first token 0.99 s, mean description 1.23 s (Mac M4)
 
-| Foto | Descrizione (IT, tradotta) | Scale/gradini? (EN) |
+| Photo | Description (IT, translated) | Stairs/steps? (EN) |
 |---|---|---|
 | 01.jpg | L'immagine mostra un interno moderno con una scala con gradini in legno e una parete bianca. La scala ha un design pulito e contemporaneo ed è illuminata dalle plafoniere incassate. Di lato, c'è una pianta in vaso e un corridoio con pareti bianche. | Yes, stairs and steps are present. |
 | 02.jpg | Un'affascinante strada stretta in una città europea è fiancheggiata da edifici colorati e piante in vaso. I gradini che conducono alla strada sono decorati con vasi di fiori, aggiungendo un tocco di vivacità alla scena. | Yes, stairs are present in the image. |
@@ -19,7 +19,7 @@
 | 13.jpg | L'immagine ritrae un ingresso accogliente e ben illuminato di una casa dall'atmosfera calda e invitante. Il corridoio è ornato con un mix di luce naturale e luce artificiale da una lampada a sospensione, appesa sopra l'ingresso, e appannamenti da parete sul lato destro. Elementi decorativi come piante appese e immagini incorniciate aggiungono un tocco di verde e personalità allo spazio. | No |
 | 14.jpg | L'immagine ritrae un corridoio moderno e ben illuminato con pareti scure e pavimenti in legno chiaro. Sul lato sinistro, c'è un armadio aperto con ripiani che contengono vari oggetti, tra cui una borsa marrone. In lontananza, una porta conduce a un'altra stanza in cui una sedia marrone viene posizionata su un tappeto. | No |
 
-### Testo originale inglese (Flash)
+### Original English text (Flash)
 - **01.jpg**: The image displays a modern interior with a staircase featuring wooden steps and a white wall. The staircase has a clean, contemporary design and is illuminated by recessed ceiling lights. To the side, there is a potted plant and a hallway with white walls.
 - **02.jpg**: A charming, narrow street in a European town is lined with colorful buildings and potted plants. The steps leading down to the street are decorated with flower pots, adding a touch of vibrancy to the scene.
 - **03.jpg**: This image captures a scenic view of a cityscape with a prominent stone staircase leading up to a hill, where the city unfolds below. The skyline is dotted with modern buildings, while the distant mountains add a serene backdrop. The foreground features a cobblestone path with a weathered stone railing, and the image includes a glimpse of graffiti on the wall nearby.
@@ -35,9 +35,9 @@
 - **13.jpg**: The image depicts a cozy and well-lit entryway of a home with a warm and inviting ambiance. The hallway is adorned with a mix of natural light and artificial light from a pendant lamp, hanging above the entryway, and wall sconces on the right side. Decorative elements such as hanging plants and framed pictures add a touch of greenery and personality to the space.
 - **14.jpg**: The image depicts a modern, well-lit hallway with dark walls and light wooden flooring. On the left side, there is an open closet with shelves holding various items, including a brown purse. In the distance, a doorway leads to another room where a brown chair is placed on a rug.
 
-## Base (Q4_K_M) – primo token medio 1.91 s, descrizione media 2.18 s (Mac M4)
+## Base (Q4_K_M) – mean first token 1.91 s, mean description 2.18 s (Mac M4)
 
-| Foto | Descrizione (IT, tradotta) | Scale/gradini? (EN) |
+| Photo | Description (IT, translated) | Stairs/steps? (EN) |
 |---|---|---|
 | 01.jpg | Una scala moderna e pulita con battistrada in legno marrone conduce fino a una parete bianca. La scala è illuminata da una lampada da soffitto calda. Sul lato sinistro della scala, c'è una pianta inciampata con foglie verdi lussureggianti in un cestello di vimini. Il pavimento dell'area della scala è realizzato in legno scuro. | Yes, stairs are present. |
 | 02.jpg | Una pittoresca strada acciottolata in un'affascinante città europea. I gradini conduconono fino agli edifici, adornati con piante in vaso, lampioni e fiori. | Yes, there are stairs visible in the image. |
@@ -54,7 +54,7 @@
 | 13.jpg | Questo è un corridoio interno accogliente e ben illuminato con pareti bianche e un'atmosfera calda e rustica. C'è una pavimentazione in legno. Nell'angolo del corridoio, c'è una panca con cuscini e un cesto intrecciato rotondo sul pavimento. La parete è ornata da una collezione di specchi di varie dimensioni, che riflettono il corridoio e creano profondità. Alcune piante aggiungono il verde, tra cui una grande pianta frondosa in un cesto decorativo, e un cane nero è visibile in lontananza, camminando attraverso una porta aperta. | No, there are no stairs, steps, escalators, or curbs visible in the image. |
 | 14.jpg | Quest'immagine ritrae un elegante e moderno armadio con pareti grigio scuro e pavimento. L'armadio presenta scaffali aperti con alcuni cappotti, una borsa di pelle e giacche. Una luce pendente unica pendente pende dal soffitto. Sullo sfondo, un corridoio conduce a un soggiorno dove una sedia e un piccolo tavolo sono visibili. | No. |
 
-### Testo originale inglese (Base)
+### Original English text (Base)
 - **01.jpg**: A modern, clean staircase with brown wooden treads leads up to a white wall. The staircase is illuminated by a warm ceiling light fixture. On the left side of the staircase, there is a potted plant with lush green leaves in a wicker basket. The floor of the staircase area is made of dark wood.
 - **02.jpg**: A picturesque cobblestone street in a charming European town. The steps lead up to the buildings, adorned with potted plants, street lamps, and flowers.
 - **03.jpg**: This image depicts a scenic view of a cityscape with a prominent stone staircase in the foreground leading down toward the urban area. The staircase, with its weathered stone steps, is bordered by a low stone wall decorated with graffiti. In the background, a sprawling city extends toward a range of distant mountains under a blue sky with wispy clouds.

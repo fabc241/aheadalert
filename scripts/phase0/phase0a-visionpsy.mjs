@@ -1,8 +1,8 @@
-// Fase 0A (Mac): VisionPsy Nano 460M (Flash e Base, Q4_K_M) sulle foto reali.
-// Stesse due richieste usate per SmolVLM2 (fase0c) per un confronto diretto:
-// A) descrizione neutra in inglese + traduzione IT (Bergamot)
-// B) domanda diretta su scale/gradini/scale mobili/cordoli.
-// Uso: node scripts/fase0/fase0a-visionpsy.mjs   (dalla cartella mobile/)
+// Phase 0A (Mac): VisionPsy Nano 460M (Flash and Base, Q4_K_M) on the real photos.
+// Same two prompts used for SmolVLM2 (phase0c) for a direct comparison:
+// A) neutral description in English + Italian translation (Bergamot)
+// B) direct question about stairs/steps/escalators/curbs.
+// Usage: node scripts/phase0/phase0a-visionpsy.mjs   (from mobile/)
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,8 +20,8 @@ import {
 } from '@qvac/sdk';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const imgDir = path.join(here, 'immagini-reali');
-const outDir = path.join(here, 'risultati');
+const imgDir = path.join(here, 'real-photos');
+const outDir = path.join(here, 'results');
 fs.mkdirSync(outDir, { recursive: true });
 const images = fs.readdirSync(imgDir).filter((f) => /\.jpe?g$/i.test(f)).sort();
 
@@ -69,13 +69,13 @@ for (const v of VARIANTS) {
     modelConfig: { ctx_size: 2048, projectionModelSrc: v.projectionModelSrc, ...v.extra },
     onProgress: (p) => p.percentage < 100 && process.stderr.write(`\r▸ ${v.name}: ${p.percentage.toFixed(0)}%  `),
   });
-  console.log(`\n${v.name} caricato in ${((Date.now() - t) / 1000).toFixed(1)} s`);
+  console.log(`\n${v.name} loaded in ${((Date.now() - t) / 1000).toFixed(1)} s`);
   results[v.name] = [];
   for (const img of images) {
     const d = await ask(modelId, img, PROMPT_DESCR);
     const s = await ask(modelId, img, PROMPT_STEPS);
     results[v.name].push({ img, d, s });
-    console.log(`[${v.name}] ${img}: ${d.text}\n   scale? ${s.text}`);
+    console.log(`[${v.name}] ${img}: ${d.text}\n   stairs? ${s.text}`);
   }
   await unloadModel({ modelId, clearStorage: false });
 }
@@ -93,21 +93,21 @@ for (const rows of Object.values(results)) {
 await unloadModel({ modelId: tr });
 
 const esc = (s) => s.replace(/\|/g, '/');
-const md = [`# Fase 0A – VisionPsy Nano 460M su foto reali – ${new Date().toISOString()}`];
+const md = [`# Phase 0A – VisionPsy Nano 460M on real photos – ${new Date().toISOString()}`];
 for (const [name, rows] of Object.entries(results)) {
   const avg = (k) => (rows.reduce((a, r) => a + r.d[k], 0) / rows.length / 1000).toFixed(2);
   md.push(
     '',
-    `## ${name} (Q4_K_M) – primo token medio ${avg('first')} s, descrizione media ${avg('ms')} s (Mac M4)`,
+    `## ${name} (Q4_K_M) – mean first token ${avg('first')} s, mean description ${avg('ms')} s (Mac M4)`,
     '',
-    '| Foto | Descrizione (IT, tradotta) | Scale/gradini? (EN) |',
+    '| Photo | Description (IT, translated) | Stairs/steps? (EN) |',
     '|---|---|---|',
     ...rows.map((r) => `| ${r.img} | ${esc(r.it)} | ${esc(r.s.text)} |`),
     '',
-    `### Testo originale inglese (${name})`,
+    `### Original English text (${name})`,
     ...rows.map((r) => `- **${r.img}**: ${r.d.text}`),
   );
 }
-fs.writeFileSync(path.join(outDir, 'fase0a-visionpsy.md'), md.join('\n') + '\n');
+fs.writeFileSync(path.join(outDir, 'phase0a-visionpsy.md'), md.join('\n') + '\n');
 await close();
 process.exit(0);

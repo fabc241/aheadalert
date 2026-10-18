@@ -1,6 +1,6 @@
-// Fase 0 (desktop): verifica funzionale di QVAC in italiano sul Mac.
-// Misura tempi indicativi (NON rappresentativi dell'iPhone 13) e salva i risultati.
-// Uso: node scripts/fase0/fase0-desktop.mjs   (dalla cartella mobile/)
+// Phase 0 (desktop): functional check of QVAC in Italian on the Mac.
+// Timings are indicative (NOT representative of the iPhone 13); results are saved to results/.
+// Usage: node scripts/phase0/phase0-desktop.mjs   (from mobile/)
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,8 +20,8 @@ import {
 import { createWav } from '../../node_modules/@qvac/sdk/dist/examples/tts/utils.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const imgDir = path.join(here, 'immagini');
-const outDir = path.join(here, 'risultati');
+const imgDir = path.join(here, 'images');
+const outDir = path.join(here, 'results');
 fs.mkdirSync(outDir, { recursive: true });
 
 const images = fs
@@ -43,10 +43,10 @@ const progress = (label) => (p) => {
   process.stderr.write(`\r▸ ${label}: download ${p.percentage.toFixed(0)}%   `);
 };
 
-log(`# Fase 0 desktop – ${new Date().toISOString()}`);
-log(`Immagini: ${images.map((i) => path.basename(i)).join(', ')}`);
+log(`# Phase 0 desktop – ${new Date().toISOString()}`);
+log(`Images: ${images.map((i) => path.basename(i)).join(', ')}`);
 
-// 1. Descrizione scena (SmolVLM2 500M)
+// 1. Scene description (SmolVLM2 500M)
 try {
   let t = Date.now();
   const vlm = await loadModel({
@@ -54,7 +54,7 @@ try {
     modelConfig: { ctx_size: 2048, projectionModelSrc: MMPROJ_SMOLVLM2_500M_MULTIMODAL_Q8_0 },
     onProgress: progress('SmolVLM2'),
   });
-  log(`\n## Descrizione scena (SmolVLM2 500M)\nCaricamento: ${secs(Date.now() - t)}`);
+  log(`\n## Scene description (SmolVLM2 500M)\nLoad: ${secs(Date.now() - t)}`);
   for (const img of images) {
     for (const [lang, prompt] of [
       ['IT', PROMPT_IT],
@@ -80,10 +80,10 @@ try {
   }
   await unloadModel({ modelId: vlm, clearStorage: false });
 } catch (e) {
-  log(`\n## Descrizione scena: ERRORE\n${e?.stack ?? e}`);
+  log(`\n## Scene description: ERROR\n${e?.stack ?? e}`);
 }
 
-// 2. OCR (EasyOCR latin_g2, italiano)
+// 2. OCR (EasyOCR latin_g2, Italian)
 try {
   let t = Date.now();
   let langUsed = ['it'];
@@ -91,11 +91,11 @@ try {
   try {
     ocrModel = await loadModel({ modelSrc: OCR_LATIN, modelConfig: { langList: langUsed }, onProgress: progress('OCR') });
   } catch (e) {
-    log(`\nOCR con langList ['it'] rifiutato: ${e?.message ?? e} → riprovo con ['en']`);
+    log(`\nOCR with langList ['it'] rejected: ${e?.message ?? e} → retrying with ['en']`);
     langUsed = ['en'];
     ocrModel = await loadModel({ modelSrc: OCR_LATIN, modelConfig: { langList: langUsed }, onProgress: progress('OCR') });
   }
-  log(`\n## OCR (OCR_LATIN, langList ${JSON.stringify(langUsed)})\nCaricamento: ${secs(Date.now() - t)}`);
+  log(`\n## OCR (OCR_LATIN, langList ${JSON.stringify(langUsed)})\nLoad: ${secs(Date.now() - t)}`);
   for (const img of images) {
     t = Date.now();
     const blocks = await ocr({ modelId: ocrModel, image: img, options: { paragraph: false } }).blocks;
@@ -106,14 +106,14 @@ try {
   }
   await unloadModel({ modelId: ocrModel, clearStorage: false });
 } catch (e) {
-  log(`\n## OCR: ERRORE\n${e?.stack ?? e}`);
+  log(`\n## OCR: ERROR\n${e?.stack ?? e}`);
 }
 
-// 3. Classificazione (MobileNetV3-Small incluso) – solo tempi
+// 3. Classification (bundled MobileNetV3-Small) – timing only
 try {
   let t = Date.now();
   const cls = await loadModel({ modelType: 'ggml-classification' });
-  log(`\n## Classificazione (MobileNetV3-Small)\nCaricamento: ${secs(Date.now() - t)}`);
+  log(`\n## Classification (MobileNetV3-Small)\nLoad: ${secs(Date.now() - t)}`);
   for (const img of images) {
     const buf = fs.readFileSync(img);
     const times = [];
@@ -124,14 +124,14 @@ try {
       times.push(performance.now() - t);
     }
     times.sort((a, b) => a - b);
-    log(`- ${path.basename(img)}: mediana ${times[5].toFixed(1)} ms su 10 run → ${JSON.stringify(last)}`);
+    log(`- ${path.basename(img)}: median ${times[5].toFixed(1)} ms over 10 runs → ${JSON.stringify(last)}`);
   }
   await unloadModel({ modelId: cls });
 } catch (e) {
-  log(`\n## Classificazione: ERRORE\n${e?.stack ?? e}`);
+  log(`\n## Classification: ERROR\n${e?.stack ?? e}`);
 }
 
-// 4. Sintesi vocale italiana (Supertonic 3)
+// 4. Italian text to speech (Supertonic 3)
 try {
   let t = Date.now();
   const tts = await loadModel({
@@ -139,27 +139,27 @@ try {
     modelConfig: { ttsEngine: 'supertonic', language: 'it', voice: 'F1', ttsSpeed: 1.0, ttsNumInferenceSteps: 5 },
     onProgress: progress('Supertonic 3'),
   });
-  log(`\n## Sintesi vocale (Supertonic 3, italiano)\nCaricamento: ${secs(Date.now() - t)}`);
-  const frasi = [
+  log(`\n## Text to speech (Supertonic 3, Italian)\nLoad: ${secs(Date.now() - t)}`);
+  const phrases = [
     'Attenzione: gradino in discesa a un metro, sulla sinistra.',
     'Davanti a te c’è un corridoio con una porta aperta a destra e una sedia vicino al muro.',
   ];
-  for (const [i, frase] of frasi.entries()) {
+  for (const [i, phrase] of phrases.entries()) {
     t = Date.now();
-    const res = textToSpeech({ modelId: tts, text: frase, inputType: 'text', stream: false });
+    const res = textToSpeech({ modelId: tts, text: phrase, inputType: 'text', stream: false });
     const audio = await res.buffer;
     const rate = (await res.sampleRate) ?? 44100;
     const ms = Date.now() - t;
-    const file = path.join(outDir, `voce-${i + 1}.wav`);
+    const file = path.join(outDir, `voice-${i + 1}.wav`);
     createWav(audio, rate, file);
-    log(`- "${frase}" → ${secs(ms)} per ${(audio.length / rate).toFixed(2)} s di audio (${path.basename(file)})`);
+    log(`- "${phrase}" → ${secs(ms)} for ${(audio.length / rate).toFixed(2)} s of audio (${path.basename(file)})`);
   }
   await unloadModel({ modelId: tts });
 } catch (e) {
-  log(`\n## Sintesi vocale: ERRORE\n${e?.stack ?? e}`);
+  log(`\n## Text to speech: ERROR\n${e?.stack ?? e}`);
 }
 
-fs.writeFileSync(path.join(outDir, 'fase0-desktop.md'), report.join('\n') + '\n');
-console.log(`\nRisultati salvati in ${path.join(outDir, 'fase0-desktop.md')}`);
+fs.writeFileSync(path.join(outDir, 'phase0-desktop.md'), report.join('\n') + '\n');
+console.log(`\nResults saved to ${path.join(outDir, 'phase0-desktop.md')}`);
 await close();
 process.exit(0);

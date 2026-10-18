@@ -1,8 +1,9 @@
-// Fase 0B (iPhone 13): misure su dispositivo per decidere cosa entra nell'MVP.
-// - Depth Anything V2 Small (Core ML) su foto e su fotogrammi ARKit dal vivo, per unità di calcolo
-// - memoria (phys_footprint, come la misura iOS per la chiusura forzata) e stato termico
-// - fotogramma ARKit salvato come JPEG per QVAC ("cosa ho davanti?")
-// - scrittura e riproduzione di WAV per la voce Supertonic
+// Phase 0B (iPhone 13): on-device measurements to decide what goes into the MVP.
+// - Depth Anything V2 Small (Core ML) on photos and live ARKit frames, per compute unit
+// - memory (phys_footprint, the metric iOS uses for out-of-memory termination) and thermal state
+// - current ARKit frame saved as JPEG for QVAC ("what is in front of me?")
+// - WAV writing and playback for the Supertonic voice
+// User-facing strings (errors, thermal and compute-unit labels) stay in Italian: the app shows them.
 import ARKit
 import AVFoundation
 import CoreML
@@ -23,8 +24,8 @@ public class PerceptionModule: Module {
 
     Constant("documentsPath") { Paths.documents.path }
 
-    // Prove da eseguire all'avvio, separate da virgola (impostate dal Mac con devicectl --environment-variables).
-    Constant("autoRun") { ProcessInfo.processInfo.environment["FASE0_AUTO"] ?? "" }
+    // Tests to run at launch, comma-separated (set from the Mac with devicectl --environment-variables).
+    Constant("autoRun") { ProcessInfo.processInfo.environment["PHASE0_AUTO"] ?? "" }
 
     Function("deviceInfo") { () -> [String: Any] in
       var info = MemoryProbe.snapshot()
@@ -46,7 +47,7 @@ public class PerceptionModule: Module {
     Function("startMemorySampler") { MemoryProbe.startSampler() }
     Function("stopMemorySampler") { () -> Double in MemoryProbe.stopSampler() }
 
-    // Durante le misure lo schermo non deve spegnersi (ARKit si fermerebbe).
+    // The screen must stay on during measurements (ARKit would stop otherwise).
     Function("setKeepAwake") { (on: Bool) in
       DispatchQueue.main.async { UIApplication.shared.isIdleTimerDisabled = on }
     }
@@ -65,17 +66,17 @@ public class PerceptionModule: Module {
       try Data(contentsOf: URL(fileURLWithPath: path))
     }
 
-    // Compila il .mlpackage copiato in Documents/fase0 (una sola volta) e restituisce i tempi.
+    // Compiles the .mlpackage copied into Documents/phase0 (once) and returns the timing.
     AsyncFunction("prepareDepthModel") { () -> [String: Any] in
       try DepthModel.prepare()
     }
 
-    // Stesso protocollo del Mac (Fase 0A): 3 di riscaldamento + 30 inferenze sulle foto, per unità.
+    // Same protocol as on the Mac (Phase 0A): 3 warm-up + 30 inferences over the photos, per unit.
     AsyncFunction("benchDepthPhotos") { () -> [[String: Any]] in
       try DepthModel.benchPhotos()
     }
 
-    // Fotogrammi ARKit dal vivo per `seconds` secondi con l'unità di calcolo indicata.
+    // Live ARKit frames for `seconds` seconds on the given compute unit.
     AsyncFunction("benchDepthLive") { (units: String, seconds: Double, promise: Promise) in
       self.live.run(units: units, seconds: seconds, progress: { p in
         self.sendEvent("onLiveProgress", p)
@@ -87,7 +88,7 @@ public class PerceptionModule: Module {
       })
     }
 
-    // Salva il fotogramma ARKit corrente come JPEG verticale (lato lungo `maxSide`).
+    // Saves the current ARKit frame as a portrait JPEG (long side `maxSide`).
     AsyncFunction("captureFrame") { (maxSide: Int, promise: Promise) in
       FrameCapture.capture(maxSide: maxSide) { result in
         switch result {
@@ -97,10 +98,10 @@ public class PerceptionModule: Module {
       }
     }
 
-    // OCR di Apple (Vision), ripiego previsto nel piano: italiano, livello "accurate".
+    // Apple OCR (Vision), the fallback foreseen in the plan: Italian, "accurate" level.
     AsyncFunction("recognizeText") { (path: String) -> [String: Any] in
       guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
-            let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { throw Fase0Error("immagine non leggibile") }
+            let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { throw Phase0Error("immagine non leggibile") }
       let request = VNRecognizeTextRequest()
       request.recognitionLevel = .accurate
       request.recognitionLanguages = ["it-IT"]
@@ -112,7 +113,7 @@ public class PerceptionModule: Module {
       return ["ms": elapsedMs(since: t0), "lines": lines]
     }
 
-    // Campioni PCM 16 bit mono (come restituiti da QVAC textToSpeech) → file WAV.
+    // 16-bit mono PCM samples (as returned by QVAC textToSpeech) → WAV file.
     AsyncFunction("writeWav") { (path: String, samples: [Double], sampleRate: Int) in
       try Wav.write(path: path, samples: samples, sampleRate: sampleRate)
     }
@@ -142,22 +143,22 @@ public class PerceptionModule: Module {
   }
 }
 
-// MARK: - Percorsi
+// MARK: - Paths
 
 enum Paths {
   static let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-  static let fase0 = documents.appendingPathComponent("fase0")
-  static let modelPackage = fase0.appendingPathComponent("DepthAnythingV2SmallF16.mlpackage")
-  static let photos = fase0.appendingPathComponent("immagini-reali")
-  static let results = fase0.appendingPathComponent("risultati")
-  static let shots = fase0.appendingPathComponent("scatti")
+  static let phase0 = documents.appendingPathComponent("phase0")
+  static let modelPackage = phase0.appendingPathComponent("DepthAnythingV2SmallF16.mlpackage")
+  static let photos = phase0.appendingPathComponent("real-photos")
+  static let results = phase0.appendingPathComponent("results")
+  static let shots = phase0.appendingPathComponent("shots")
   static var compiledModel: URL {
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     return support.appendingPathComponent("DepthAnythingV2SmallF16.mlmodelc")
   }
 }
 
-struct Fase0Error: LocalizedError {
+struct Phase0Error: LocalizedError {
   let message: String
   init(_ message: String) { self.message = message }
   var errorDescription: String? { message }
@@ -179,14 +180,14 @@ func p90(_ v: [Double]) -> Double {
   return s[min(s.count - 1, Int(Double(s.count) * 0.9))]
 }
 
-// MARK: - Memoria e temperatura
+// MARK: - Memory and thermal state
 
 enum MemoryProbe {
   private static var timer: DispatchSourceTimer?
   private static var peak: Double = 0
   private static let lock = NSLock()
 
-  /// phys_footprint: la stessa misura che iOS usa per chiudere le app che usano troppa memoria.
+  /// phys_footprint: the same metric iOS uses to terminate apps that use too much memory.
   static func footprintMB() -> Double {
     var info = task_vm_info_data_t()
     var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
@@ -222,10 +223,10 @@ enum MemoryProbe {
     t.setEventHandler {
       let v = footprintMB()
       lock.lock(); peak = max(peak, v); lock.unlock()
-      // Traccia in console (devicectl --console): utile se iOS chiude l'app per memoria
+      // Console trace (devicectl --console): useful when iOS kills the app for memory
       if abs(v - lastLogged) >= 100 {
         lastLogged = v
-        NSLog("[fase0] memoria app %.0f MB, disponibile %.0f MB", v, Double(os_proc_available_memory()) / 1_048_576)
+        NSLog("[phase0] app memory %.0f MB, available %.0f MB", v, Double(os_proc_available_memory()) / 1_048_576)
       }
     }
     t.resume()
@@ -251,7 +252,7 @@ enum DepthModel {
   ]
 
   static func units(for key: String) throws -> (label: String, units: MLComputeUnits) {
-    guard let u = unitsTable.first(where: { $0.key == key }) else { throw Fase0Error("unità sconosciuta: \(key)") }
+    guard let u = unitsTable.first(where: { $0.key == key }) else { throw Phase0Error("unità sconosciuta: \(key)") }
     return (u.label, u.units)
   }
 
@@ -261,7 +262,7 @@ enum DepthModel {
       return ["compiled": false, "compileMs": 0]
     }
     guard fm.fileExists(atPath: Paths.modelPackage.path) else {
-      throw Fase0Error("Modello non trovato in Documents/fase0: va copiato dal Mac (scripts/fase0/copia-su-iphone.sh)")
+      throw Phase0Error("Modello non trovato in Documents/phase0: va copiato dal Mac (scripts/phase0/copy-to-iphone.sh)")
     }
     let t0 = DispatchTime.now().uptimeNanoseconds
     let tmp = try MLModel.compileModel(at: Paths.modelPackage)
@@ -283,12 +284,12 @@ enum DepthModel {
     let files = try FileManager.default.contentsOfDirectory(at: Paths.photos, includingPropertiesForKeys: nil)
       .filter { ["jpg", "jpeg", "png"].contains($0.pathExtension.lowercased()) }
       .sorted { $0.lastPathComponent < $1.lastPathComponent }
-    guard !files.isEmpty else { throw Fase0Error("Nessuna foto in Documents/fase0/immagini-reali") }
+    guard !files.isEmpty else { throw Phase0Error("Nessuna foto in Documents/phase0/real-photos") }
     let images: [CGImage] = files.compactMap { url in
       guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
       return CGImageSourceCreateImageAtIndex(src, 0, nil)
     }
-    let outDir = Paths.results.appendingPathComponent("profondita-iphone")
+    let outDir = Paths.results.appendingPathComponent("depth-iphone")
     try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
     var rows: [[String: Any]] = []
@@ -297,7 +298,7 @@ enum DepthModel {
       let inputName = model.modelDescription.inputDescriptionsByName.keys.first!
       let outputName = model.modelDescription.outputDescriptionsByName.keys.first!
       guard let constraint = model.modelDescription.inputDescriptionsByName[inputName]?.imageConstraint else {
-        throw Fase0Error("l'input del modello non è un'immagine")
+        throw Phase0Error("l'input del modello non è un'immagine")
       }
       let inputs: [MLDictionaryFeatureProvider] = try images.map { cg in
         let fv = try MLFeatureValue(cgImage: cg, constraint: constraint,
@@ -310,11 +311,11 @@ enum DepthModel {
         let t0 = DispatchTime.now().uptimeNanoseconds
         let out = try model.prediction(from: inputs[i % inputs.count])
         times.append(elapsedMs(since: t0))
-        // Mappe del Neural Engine salvate per confrontarle a occhio con quelle del Mac (Float16 sull'ANE)
+        // Neural Engine maps saved for a visual comparison with the Mac ones (Float16 on the ANE)
         if u.units == .cpuAndNeuralEngine && i < inputs.count, let v = out.featureValue(for: outputName),
            let d = DepthMap(v) {
           let name = files[i].deletingPathExtension().lastPathComponent
-          d.savePNG(to: outDir.appendingPathComponent("\(name)-profondita-ane.png"))
+          d.savePNG(to: outDir.appendingPathComponent("\(name)-depth-ane.png"))
         }
       }
       rows.append([
@@ -328,7 +329,7 @@ enum DepthModel {
   }
 }
 
-/// Mappa di profondità relativa (Depth Anything: valori alti = vicino).
+/// Relative depth map (Depth Anything: high values = near).
 struct DepthMap {
   let values: [Float]
   let width: Int
@@ -378,8 +379,8 @@ struct DepthMap {
     self.init(values: out, width: w, height: h)
   }
 
-  /// Media della metà inferiore per terzi sinistra/centro/destra, normalizzata 0–1 sulla mappa:
-  /// è la parte di elaborazione che servirà all'MVP, qui solo per misurarne il costo.
+  /// Mean of the lower half in left/centre/right thirds, normalised 0–1 over the map:
+  /// the kind of post-processing the MVP will need, here only to measure its cost.
   func zones() -> [Double] {
     let lo = values.min() ?? 0, hi = values.max() ?? 1
     let range = max(hi - lo, 1e-6)
@@ -410,18 +411,18 @@ struct DepthMap {
   }
 }
 
-// MARK: - Profondità dal vivo su fotogrammi ARKit
+// MARK: - Live depth on ARKit frames
 
 final class LiveDepthRunner: NSObject, ARSessionDelegate {
   private let session = ARSession()
-  private let frameQueue = DispatchQueue(label: "fase0.ar.frames")
-  private let inferQueue = DispatchQueue(label: "fase0.depth.infer", qos: .userInitiated)
-  // La misura (attesa, avanzamento, chiusura) gira su una coda propria: se girasse su inferQueue
-  // bloccherebbe le inferenze e il sync finale su inferQueue farebbe chiudere l'app.
-  private let controlQueue = DispatchQueue(label: "fase0.depth.control")
+  private let frameQueue = DispatchQueue(label: "phase0.ar.frames")
+  private let inferQueue = DispatchQueue(label: "phase0.depth.infer", qos: .userInitiated)
+  // The measurement loop (waiting, progress, teardown) runs on its own queue: on inferQueue it would
+  // block the inferences, and the final sync on inferQueue would crash the app.
+  private let controlQueue = DispatchQueue(label: "phase0.depth.control")
   private var running = false
 
-  // stato della misura (accesso su frameQueue)
+  // measurement state (accessed on frameQueue)
   private var request: VNCoreMLRequest?
   private var busy = false
   private var arFrames = 0
@@ -436,9 +437,9 @@ final class LiveDepthRunner: NSObject, ARSessionDelegate {
            progress: @escaping ([String: Any]) -> Void,
            completion: @escaping (Result<[String: Any], Error>) -> Void) {
     guard ARWorldTrackingConfiguration.isSupported else {
-      return completion(.failure(Fase0Error("ARKit non supportato")))
+      return completion(.failure(Phase0Error("ARKit non supportato")))
     }
-    guard !running else { return completion(.failure(Fase0Error("misura già in corso"))) }
+    guard !running else { return completion(.failure(Phase0Error("misura già in corso"))) }
     running = true
 
     controlQueue.async {
@@ -467,7 +468,7 @@ final class LiveDepthRunner: NSObject, ARSessionDelegate {
         }
 
         DispatchQueue.main.sync { self.session.pause() }
-        // attende l'eventuale inferenza in corso
+        // wait for any inference still running
         self.inferQueue.sync {}
         var result = self.frameQueue.sync { self.summary(final: true) }
         result["units"] = key
@@ -525,13 +526,13 @@ final class LiveDepthRunner: NSObject, ARSessionDelegate {
   }
 
   func session(_ session: ARSession, didUpdate frame: ARFrame) {
-    // su frameQueue
+    // on frameQueue
     arFrames += 1
     if case .normal = frame.camera.trackingState { trackingNormal += 1 }
     if let le = frame.lightEstimate { lightValues.append(Double(le.ambientIntensity)) }
     guard !busy, let request else { return }
     busy = true
-    let pixelBuffer = frame.capturedImage  // non si trattiene l'ARFrame
+    let pixelBuffer = frame.capturedImage  // do not retain the ARFrame
     inferQueue.async {
       let t0 = DispatchTime.now().uptimeNanoseconds
       let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up)
@@ -557,7 +558,7 @@ final class LiveDepthRunner: NSObject, ARSessionDelegate {
   }
 }
 
-// MARK: - Fotogramma ARKit → JPEG
+// MARK: - ARKit frame → JPEG
 
 enum FrameCapture {
   private static var session: ARSession?
@@ -565,33 +566,33 @@ enum FrameCapture {
   static func capture(maxSide: Int, completion: @escaping (Result<[String: Any], Error>) -> Void) {
     DispatchQueue.main.async {
       guard ARWorldTrackingConfiguration.isSupported else {
-        return completion(.failure(Fase0Error("ARKit non supportato")))
+        return completion(.failure(Phase0Error("ARKit non supportato")))
       }
       let s = ARSession()
       session = s
       let config = ARWorldTrackingConfiguration()
       config.isLightEstimationEnabled = true
       s.run(config)
-      // un secondo e mezzo per stabilizzare esposizione e messa a fuoco
+      // one and a half seconds for exposure and focus to settle
       DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
         defer { s.pause(); session = nil }
         guard let frame = s.currentFrame else {
-          return completion(.failure(Fase0Error("nessun fotogramma dalla fotocamera")))
+          return completion(.failure(Phase0Error("nessun fotogramma dalla fotocamera")))
         }
         let pixelBuffer = frame.capturedImage
         let light = frame.lightEstimate.map { Double($0.ambientIntensity) }
         DispatchQueue.global(qos: .userInitiated).async {
           do {
-            var img = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)  // verticale
+            var img = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)  // portrait
             let scale = min(1, Double(maxSide) / Double(max(img.extent.width, img.extent.height)))
             if scale < 1 { img = img.transformed(by: CGAffineTransform(scaleX: scale, y: scale)) }
             let ctx = CIContext()
             guard let data = ctx.jpegRepresentation(of: img, colorSpace: CGColorSpaceCreateDeviceRGB(),
                                                     options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.85])
-            else { throw Fase0Error("conversione JPEG non riuscita") }
+            else { throw Phase0Error("conversione JPEG non riuscita") }
             try FileManager.default.createDirectory(at: Paths.shots, withIntermediateDirectories: true)
             let stamp = Int(Date().timeIntervalSince1970)
-            let url = Paths.shots.appendingPathComponent("scatto-\(stamp).jpg")
+            let url = Paths.shots.appendingPathComponent("shot-\(stamp).jpg")
             try data.write(to: url)
             var r: [String: Any] = ["path": url.path, "width": Int(img.extent.width), "height": Int(img.extent.height)]
             if let light { r["light"] = light }

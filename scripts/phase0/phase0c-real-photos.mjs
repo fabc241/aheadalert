@@ -1,7 +1,7 @@
-// Fase 0c (desktop): SmolVLM2 su foto reali.
-// A) descrizione neutra in inglese + traduzione IT (Bergamot)
-// B) domanda diretta "ci sono scale/gradini/cordoli?" per misurare errori e invenzioni.
-// Uso: node scripts/fase0/fase0c-foto-reali.mjs   (dalla cartella mobile/)
+// Phase 0c (desktop): SmolVLM2 on real photos.
+// A) neutral description in English + Italian translation (Bergamot)
+// B) direct question "are there stairs/steps/curbs?" to measure errors and hallucinations.
+// Usage: node scripts/phase0/phase0c-real-photos.mjs   (from mobile/)
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,8 +17,8 @@ import {
 } from '@qvac/sdk';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const imgDir = path.join(here, 'immagini-reali');
-const outDir = path.join(here, 'risultati');
+const imgDir = path.join(here, 'real-photos');
+const outDir = path.join(here, 'results');
 fs.mkdirSync(outDir, { recursive: true });
 const images = fs.readdirSync(imgDir).filter((f) => /\.jpe?g$/i.test(f)).sort();
 
@@ -47,7 +47,7 @@ for (const img of images) {
   const d = await ask(vlm, img, PROMPT_DESCR);
   const s = await ask(vlm, img, PROMPT_STEPS);
   rows.push({ img, d, s });
-  console.log(`${img}: ${d.text}\n   scale? ${s.text}`);
+  console.log(`${img}: ${d.text}\n   stairs? ${s.text}`);
 }
 await unloadModel({ modelId: vlm, clearStorage: false });
 
@@ -62,17 +62,17 @@ for (const r of rows) {
 await unloadModel({ modelId: tr });
 
 const md = [
-  `# Fase 0c – SmolVLM2 su foto reali – ${new Date().toISOString()}`,
+  `# Phase 0c – SmolVLM2 on real photos – ${new Date().toISOString()}`,
   '',
-  '| Foto | Descrizione (IT, tradotta) | Scale/gradini? (EN) | Tempo descr. |',
+  '| Photo | Description (IT, translated) | Stairs/steps? (EN) | Description time |',
   '|---|---|---|---|',
   ...rows.map(
     (r) => `| ${r.img} | ${r.it.replace(/\|/g, '/')} | ${r.s.text.replace(/\|/g, '/')} | ${(r.d.ms / 1000).toFixed(1)} s |`,
   ),
   '',
-  '## Testo originale inglese',
+  '## Original English text',
   ...rows.map((r) => `- **${r.img}**: ${r.d.text}`),
 ];
-fs.writeFileSync(path.join(outDir, 'fase0c-foto-reali.md'), md.join('\n') + '\n');
+fs.writeFileSync(path.join(outDir, 'phase0c-real-photos.md'), md.join('\n') + '\n');
 await close();
 process.exit(0);

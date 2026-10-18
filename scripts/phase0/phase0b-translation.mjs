@@ -1,6 +1,6 @@
-// Fase 0b (desktop): descrizione in inglese con SmolVLM2 + traduzione offline EN→IT (Bergamot),
-// e OCR senza tentativi di rotazione per ridurre i tempi.
-// Uso: node scripts/fase0/fase0b-traduzione.mjs   (dalla cartella mobile/)
+// Phase 0b (desktop): English description with SmolVLM2 + offline EN→IT translation (Bergamot),
+// and OCR without rotation attempts to cut the time.
+// Usage: node scripts/phase0/phase0b-translation.mjs   (from mobile/)
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,8 +18,8 @@ import {
 } from '@qvac/sdk';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const imgDir = path.join(here, 'immagini');
-const outDir = path.join(here, 'risultati');
+const imgDir = path.join(here, 'images');
+const outDir = path.join(here, 'results');
 fs.mkdirSync(outDir, { recursive: true });
 const images = fs
   .readdirSync(imgDir)
@@ -36,9 +36,9 @@ const log = (line) => {
 };
 const secs = (ms) => (ms / 1000).toFixed(2) + ' s';
 
-log(`# Fase 0b desktop – ${new Date().toISOString()}`);
+log(`# Phase 0b desktop – ${new Date().toISOString()}`);
 
-// 1. Descrizioni in inglese
+// 1. English descriptions
 const descrizioni = [];
 try {
   const vlm = await loadModel({
@@ -58,17 +58,17 @@ try {
   }
   await unloadModel({ modelId: vlm, clearStorage: false });
 } catch (e) {
-  log(`\n## Descrizione: ERRORE\n${e?.stack ?? e}`);
+  log(`\n## Description: ERROR\n${e?.stack ?? e}`);
 }
 
-// 2. Traduzione EN→IT
+// 2. EN→IT translation
 try {
   let t = Date.now();
   const tr = await loadModel({
     modelSrc: BERGAMOT_EN_IT,
     modelConfig: { engine: 'Bergamot', from: 'en', to: 'it' },
   });
-  log(`\n## Descrizione EN (SmolVLM2) + traduzione IT (Bergamot)\nCaricamento traduttore: ${secs(Date.now() - t)}`);
+  log(`\n## EN description (SmolVLM2) + IT translation (Bergamot)\nTranslator load: ${secs(Date.now() - t)}`);
   for (const d of descrizioni) {
     t = Date.now();
     const res = translate({ modelId: tr, text: [d.en], modelType: 'nmtcpp-translation', stream: true });
@@ -81,16 +81,16 @@ try {
   }
   await unloadModel({ modelId: tr });
 } catch (e) {
-  log(`\n## Traduzione: ERRORE\n${e?.stack ?? e}`);
+  log(`\n## Translation: ERROR\n${e?.stack ?? e}`);
 }
 
-// 3. OCR senza rotazioni
+// 3. OCR without rotations
 try {
   const m = await loadModel({
     modelSrc: OCR_LATIN,
     modelConfig: { langList: ['it'], defaultRotationAngles: [], contrastRetry: false, recognizerBatchSize: 8 },
   });
-  log(`\n## OCR senza rotazioni (OCR_LATIN, it)`);
+  log(`\n## OCR without rotations (OCR_LATIN, it)`);
   for (const img of images) {
     const t = Date.now();
     const blocks = await ocr({ modelId: m, image: img, options: { paragraph: false } }).blocks;
@@ -98,9 +98,9 @@ try {
   }
   await unloadModel({ modelId: m, clearStorage: false });
 } catch (e) {
-  log(`\n## OCR: ERRORE\n${e?.stack ?? e}`);
+  log(`\n## OCR: ERROR\n${e?.stack ?? e}`);
 }
 
-fs.writeFileSync(path.join(outDir, 'fase0b-traduzione.md'), report.join('\n') + '\n');
+fs.writeFileSync(path.join(outDir, 'phase0b-translation.md'), report.join('\n') + '\n');
 await close();
 process.exit(0);
