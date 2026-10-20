@@ -1,6 +1,6 @@
 // Large, high-contrast button used across the app. VoiceOver reads the title, then the hint.
 import { Pressable, StyleSheet, Text } from 'react-native';
-import { WHITE, YELLOW } from './theme';
+import { MAX_FONT_SCALE, WHITE, YELLOW } from './theme';
 
 type Props = { title: string; hint?: string; disabled?: boolean; onPress: () => void };
 
@@ -15,8 +15,8 @@ export function BigButton({ title, hint, disabled, onPress }: Props) {
       accessibilityState={{ disabled: !!disabled }}
       style={({ pressed }) => [styles.button, disabled && styles.disabled, pressed && styles.pressed]}
     >
-      <Text style={styles.title}>{title}</Text>
-      {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.title}>{title}</Text>
+      {hint ? <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.hint}>{hint}</Text> : null}
     </Pressable>
   );
 }

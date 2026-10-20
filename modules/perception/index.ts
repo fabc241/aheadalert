@@ -50,8 +50,11 @@ export type DeviceInfo = Memory & {
 
 export type DepthUnits = 'cpu' | 'gpu' | 'ane' | 'all';
 
-/** Obstacle guide state (MVP step 1.1), sent about once a second while it runs. */
-export type GuideState = 'starting' | 'tracking' | 'searchingFloor' | 'upright' | 'active' | 'stopped';
+/**
+ * Obstacle guide state (MVP step 1.1), sent about once a second while it runs.
+ * Step 1.7: paused = phone locked or app in the background (no camera); the guide starts again on return.
+ */
+export type GuideState = 'starting' | 'tracking' | 'searchingFloor' | 'upright' | 'active' | 'paused' | 'stopped';
 /** How far the alerts can be trusted (MVP step 1.2); "unavailable" means no alerts at all. */
 export type Reliability = 'good' | 'reduced' | 'unavailable';
 export type ReliabilityReason = 'none' | 'starting' | 'lowLight' | 'scale' | 'slow' | 'dark' | 'motion' | 'noFloor';

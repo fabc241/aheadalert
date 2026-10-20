@@ -1,14 +1,13 @@
-// Phase 0 technical tests (reached from the home screen, or opened directly by PHASE0_AUTO).
+// Phase 0 technical tests (reached from the settings since step 1.7, or opened directly by PHASE0_AUTO).
 // Phase 0B: test screen for the iPhone 13. Large buttons, high contrast, status announced by VoiceOver.
 // The UI is in Italian (the target user is Italian). Results go to Documents/phase0/results/phase0b-<date>.md
 // (fetched to the Mac with scripts/phase0/fetch-from-iphone.sh).
-import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Perception, { type DepthUnits } from '../../modules/perception';
 import { BigButton } from '../ui/BigButton';
+import { Screen } from '../ui/Screen';
 import { YELLOW } from '../ui/theme';
 import { testDepthLive, testDepthPhotos } from '../phase0/depthTests';
 import {
@@ -126,66 +125,55 @@ export default function TestsScreen() {
   }, []);
 
   return (
-    <SafeAreaView style={styles.root}>
-      <StatusBar style="light" />
-      <ScrollView contentContainerStyle={styles.content}>
-        <BigButton
-          title="Indietro"
-          hint="Torna alla schermata principale"
-          disabled={!!busy}
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
-        />
-        <BigButton
-          title="Prova vibrazioni e suoni"
-          hint="Impara i segnali della guida e prova a riconoscerli, da fermo"
-          disabled={!!busy}
-          onPress={() => router.push('/feedback-test')}
-        />
-        <Text style={styles.title} accessibilityRole="header">
-          Prove tecniche
+    <Screen>
+      <BigButton
+        title="Indietro"
+        hint="Torna alle impostazioni"
+        disabled={!!busy}
+        onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+      />
+      <Text style={styles.title} accessibilityRole="header">
+        Prove tecniche
+      </Text>
+      <View style={styles.statusBox} accessibilityLiveRegion="polite">
+        <Text style={styles.status}>{status}</Text>
+      </View>
+      {tests.map((t) => {
+        const disabled = !!busy && busy !== t.title;
+        return (
+          <Pressable
+            key={t.id}
+            onPress={() => run(t)}
+            disabled={!!busy}
+            accessibilityRole="button"
+            accessibilityLabel={t.title}
+            accessibilityHint={t.hint}
+            accessibilityState={{ disabled: !!busy, busy: busy === t.title }}
+            style={({ pressed }) => [
+              styles.button,
+              busy === t.title && styles.buttonActive,
+              disabled && styles.buttonDisabled,
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            <Text style={[styles.buttonText, busy === t.title && styles.buttonTextActive]}>{t.title}</Text>
+            <Text style={[styles.hint, busy === t.title && styles.buttonTextActive]}>{t.hint}</Text>
+          </Pressable>
+        );
+      })}
+      <Text style={styles.section} accessibilityRole="header">
+        Registro
+      </Text>
+      {lines.map((l, i) => (
+        <Text key={i} style={styles.log}>
+          {l}
         </Text>
-        <View style={styles.statusBox} accessibilityLiveRegion="polite">
-          <Text style={styles.status}>{status}</Text>
-        </View>
-        {tests.map((t) => {
-          const disabled = !!busy && busy !== t.title;
-          return (
-            <Pressable
-              key={t.id}
-              onPress={() => run(t)}
-              disabled={!!busy}
-              accessibilityRole="button"
-              accessibilityLabel={t.title}
-              accessibilityHint={t.hint}
-              accessibilityState={{ disabled: !!busy, busy: busy === t.title }}
-              style={({ pressed }) => [
-                styles.button,
-                busy === t.title && styles.buttonActive,
-                disabled && styles.buttonDisabled,
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              <Text style={[styles.buttonText, busy === t.title && styles.buttonTextActive]}>{t.title}</Text>
-              <Text style={[styles.hint, busy === t.title && styles.buttonTextActive]}>{t.hint}</Text>
-            </Pressable>
-          );
-        })}
-        <Text style={styles.section} accessibilityRole="header">
-          Registro
-        </Text>
-        {lines.map((l, i) => (
-          <Text key={i} style={styles.log}>
-            {l}
-          </Text>
-        ))}
-      </ScrollView>
-    </SafeAreaView>
+      ))}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#000' },
-  content: { padding: 16, gap: 14, paddingBottom: 48 },
   title: { color: YELLOW, fontSize: 30, fontWeight: '800' },
   statusBox: { borderColor: YELLOW, borderWidth: 3, borderRadius: 12, padding: 14, minHeight: 90 },
   status: { color: '#FFF', fontSize: 24, fontWeight: '700' },

@@ -5,6 +5,7 @@
 // camera frame, also while the obstacle alerts are suspended (in a dark room the lit door is what matters).
 // MVP step 1.5 (experimental): step down and step up ahead ("Gradino giù / su, un metro"), from the same analysis.
 // MVP step 1.6: the user's settings (GuideSettings): alert distance, voice and/or vibration, sound with headphones.
+// MVP step 1.7: phone locked or app left while the guide runs: paused (shown on screen), then started again on return.
 // Everything runs natively; JavaScript only starts/stops the guide and receives a status once a second.
 //
 // Pipeline per frame:
@@ -277,6 +278,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   // main
   private(set) var running = false
   private var sessionStarted = false
+  private var paused = false  // step 1.7: phone locked or app in the background (camera taken by iOS)
   private var startTime: Double = 0
   private var tracks: [[ZoneHit?]] = [[], [], []]
   private var lastSpoken: [Double] = [-100, -100, -100]
@@ -346,12 +348,10 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
         self.feedback.onEvent = { [weak self] e in self?.log.write("feedback", e) }
         self.feedback.start()
         UIApplication.shared.isIdleTimerDisabled = true
-        let config = ARWorldTrackingConfiguration()
-        config.planeDetection = [.horizontal]
-        config.isLightEstimationEnabled = true
+        self.paused = false
         self.session.delegate = self
         self.session.delegateQueue = self.frameQueue
-        self.session.run(config, options: [.resetTracking, .removeExistingAnchors])
+        self.session.run(Self.config, options: [.resetTracking, .removeExistingAnchors])
         self.log.write("start", "device \(PerceptionModule.modelIdentifier()), \(self.settings.logText) from the body, phone offset \(GuideTuning.bodyOffset) m")
         self.voice.say("Guida avviata")
         self.sessionStarted = true
@@ -371,6 +371,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       self.running = false
       guard self.sessionStarted else { return completion() }  // still loading: load() cleans up
       self.sessionStarted = false
+      self.paused = false
       self.session.pause()
       self.feedback.stop()
       UIApplication.shared.isIdleTimerDisabled = false
@@ -558,6 +559,48 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     log.write("error", error.localizedDescription)
   }
 
+  private static var config: ARWorldTrackingConfiguration {
+    let config = ARWorldTrackingConfiguration()
+    config.planeDetection = [.horizontal]
+    config.isLightEstimationEnabled = true
+    return config
+  }
+
+  /// Step 1.7: the phone was locked or the app left (iOS takes the camera). No frames, so no alerts and no voice
+  /// until the user is back: the home screen says so instead of "Guida attiva".
+  func sessionWasInterrupted(_ session: ARSession) {
+    DispatchQueue.main.async {
+      guard self.running && self.sessionStarted && !self.paused else { return }
+      self.paused = true
+      self.log.write("paused", "session interrupted (phone locked or app in the background)")
+      self.onStatus?(["state": "paused"])
+    }
+  }
+
+  /// Step 1.7: back in the app, the guide starts again as from "Avvia guida" (fresh tracking: the phone may have
+  /// moved anywhere meanwhile), without reloading the model or closing the log.
+  func sessionInterruptionEnded(_ session: ARSession) {
+    DispatchQueue.main.async {
+      guard self.running && self.sessionStarted && self.paused else { return }
+      self.paused = false
+      self.frameQueue.async {
+        self.trail = []
+        self.lastWalk = nil
+        self.lastLightRun = 0
+        self.latestLight = nil
+      }
+      self.resetMainState()
+      // Audio and haptic engines are stopped by iOS in the background: started again.
+      try? AVAudioSession.sharedInstance().setActive(true)
+      self.feedback.stop()
+      self.feedback.start()
+      self.session.run(Self.config, options: [.resetTracking, .removeExistingAnchors])
+      self.log.write("resumed", "session interruption ended, tracking reset")
+      self.voice.say("Guida ripresa")
+      self.onStatus?(["state": "starting"])
+    }
+  }
+
   /// The floor the user stands on. Step 1.5: the phone is held at about the same height all the time, so the floor
   /// is a plane at that distance below it (±30 cm), and a plane much lower or higher is not it. On the stairs of
   /// 19/10 the lowest plane was the floor below: the phone seemed 2 m above it, railing, wall and the landing all
@@ -607,7 +650,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   // MARK: Alerts (main)
 
   private func handle(_ analysis: FrameAnalysis?, state newState: String, detail: String, light: Float?, ms: Double) {
-    guard running else { return }
+    guard running && !paused else { return }
     let now = CACurrentMediaTime()
     if newState != state {
       log.write("state", newState == "tracking" ? "tracking \(detail)" : newState)
@@ -775,7 +818,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   // MARK: Light passages (main, step 1.4)
 
   private func handleLight(_ a: LightAnalysis) {
-    guard running && sessionStarted else { return }
+    guard running && sessionStarted && !paused else { return }
     let now = CACurrentMediaTime()
     lightView = a
     if let kind = lightWarning.update(a, now: now) {

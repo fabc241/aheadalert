@@ -5,15 +5,16 @@
 // Step 1.4: it also warns of a passage to a dark (or bright) zone ahead; the last warning is shown here.
 // Step 1.5: and of a step down or up ahead (experimental); the last one is shown here.
 // Step 1.6: "Impostazioni" (alert distance, alert type, sound with headphones); the current choice is in its hint.
+// Step 1.7: final layout, only "Avvia guida" and "Impostazioni" ("Impara i segnali" and "Prove tecniche" are at the
+// bottom of the settings).
 import { Redirect, router, useFocusEffect } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Perception, { type GuideStatus, type Reliability, type ReliabilityReason } from '../../modules/perception';
 import { BigButton } from '../ui/BigButton';
 import { DISTANCE_TEXT, settingsSummary } from '../ui/guideSettings';
-import { BLACK, WHITE, YELLOW } from '../ui/theme';
+import { Screen } from '../ui/Screen';
+import { BLACK, MAX_FONT_SCALE, WHITE, YELLOW } from '../ui/theme';
 
 const STATE_TEXT: Record<GuideStatus['state'] | 'loading', string> = {
   loading: 'Preparo la guida…',
@@ -22,6 +23,7 @@ const STATE_TEXT: Record<GuideStatus['state'] | 'loading', string> = {
   searchingFloor: 'Cerco il pavimento: inclina il telefono verso il basso.',
   upright: 'Inclina il telefono verso il basso.',
   active: 'Guida attiva.',
+  paused: 'Guida in pausa: telefono bloccato o app chiusa. Riprende tornando all’app.',
   stopped: 'Guida ferma.',
 };
 
@@ -101,64 +103,59 @@ export default function HomeScreen() {
     }
   }
 
-  async function openTests() {
-    // The tests use the camera too: only one of them at a time.
-    if (on) {
-      await Perception.stopGuide();
-      setState('stopped');
-    }
-    router.push('/tests');
-  }
-
   return (
-    <SafeAreaView style={styles.root}>
-      <StatusBar style="light" />
-      <View style={styles.content}>
-        <Text style={styles.title} accessibilityRole="header">
-          Guida Visiva
-        </Text>
-        <BigButton
-          title={on ? 'Ferma guida' : 'Avvia guida'}
-          hint={
-            on
-              ? 'Ferma gli avvisi e la fotocamera'
-              : `Avvisa degli ostacoli davanti e ai lati, entro ${DISTANCE_TEXT[settings.alertDistance]}, dei gradini in su o in giù (funzione sperimentale) e del passaggio verso una zona buia o luminosa. Tieni il telefono al petto, inclinato verso il basso`
-          }
-          disabled={state === 'loading'}
-          onPress={toggleGuide}
-        />
-        <View style={[styles.statusBox, suspended && styles.statusBoxSuspended]} accessible>
-          {shownReliability ? (
-            <Text style={[styles.status, suspended && styles.suspendedText]}>
-              {RELIABILITY_TEXT[shownReliability.level]}
-              {reason ? `: ${reason}.` : '.'}
-            </Text>
-          ) : null}
-          {!suspended ? <Text style={styles.status}>{error ? `Errore: ${error}` : STATE_TEXT[state]}</Text> : null}
-          {on && lastAlert && !suspended ? <Text style={styles.text}>Ultimo avviso: {lastAlert}</Text> : null}
-          {on && lastStep && !suspended ? <Text style={styles.text}>Gradino: {lastStep}</Text> : null}
-          {on && lastLight ? (
-            <Text style={[styles.text, suspended && styles.suspendedLight]}>Luce: {lastLight}</Text>
-          ) : null}
-        </View>
-        <BigButton
-          title="Impostazioni"
-          hint={`${settingsSummary(settings)}. Cambia distanza e tipo degli avvisi`}
-          onPress={() => router.push('/settings')}
-        />
-        <BigButton
-          title="Prove tecniche"
-          hint="Apre le prove della Fase 0 su profondità, descrizione, lettura e voce"
-          onPress={openTests}
-        />
+    <Screen>
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.title} accessibilityRole="header">
+        Guida Visiva
+      </Text>
+      <BigButton
+        title={on ? 'Ferma guida' : 'Avvia guida'}
+        hint={
+          on
+            ? 'Ferma gli avvisi e la fotocamera'
+            : `Ostacoli, gradini e cambi di luce entro ${DISTANCE_TEXT[settings.alertDistance]}. Telefono al petto, inclinato verso il basso`
+        }
+        disabled={state === 'loading'}
+        onPress={toggleGuide}
+      />
+      <View style={[styles.statusBox, suspended && styles.statusBoxSuspended]} accessible>
+        {shownReliability ? (
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.status, suspended && styles.suspendedText]}>
+            {RELIABILITY_TEXT[shownReliability.level]}
+            {reason ? `: ${reason}.` : '.'}
+          </Text>
+        ) : null}
+        {!suspended ? (
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.status}>
+            {error ? `Errore: ${error}` : STATE_TEXT[state]}
+          </Text>
+        ) : null}
+        {on && lastAlert && !suspended ? (
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.text}>
+            Ultimo avviso: {lastAlert}
+          </Text>
+        ) : null}
+        {on && lastStep && !suspended ? (
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.text}>
+            Gradino: {lastStep}
+          </Text>
+        ) : null}
+        {on && lastLight ? (
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[styles.text, suspended && styles.suspendedLight]}>
+            Luce: {lastLight}
+          </Text>
+        ) : null}
       </View>
-    </SafeAreaView>
+      <BigButton
+        title="Impostazioni"
+        hint={`${settingsSummary(settings)}. Cambia distanza e tipo degli avvisi, impara i segnali`}
+        onPress={() => router.push('/settings')}
+      />
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BLACK },
-  content: { padding: 16, gap: 20 },
   title: { color: YELLOW, fontSize: 34, fontWeight: '800' },
   statusBox: { borderColor: YELLOW, borderWidth: 3, borderRadius: 12, padding: 14, minHeight: 90, gap: 8 },
   // Suspended guide: solid yellow, visible at the edge of the field of view.
