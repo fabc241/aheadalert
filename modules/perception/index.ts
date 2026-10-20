@@ -66,13 +66,16 @@ export type GuideStatus = {
   light?: number;
   /** MVP step 1.4: last light-passage warning spoken ("Zona buia davanti" / "Zona luminosa davanti"), or "". */
   lastLight?: string;
+  /** MVP step 1.5: last step announced, without "Gradino" ("giù, un metro" / "su, mezzo metro"), or "". */
+  lastStep?: string;
 };
 
 /**
  * MVP step 1.3: the guide's signals. left = one tap, right = two taps, ahead = long buzz, suspended = two long buzzes.
  * Step 1.4: light = three quick taps (light passage ahead), without sound.
+ * Step 1.5: step = one strong tap and a long buzz (step down or up ahead); with headphones the low click ahead.
  */
-export type FeedbackKind = 'left' | 'ahead' | 'right' | 'suspended' | 'light';
+export type FeedbackKind = 'left' | 'ahead' | 'right' | 'suspended' | 'light' | 'step';
 /** What was actually played: no sound without headphones, no vibration if the phone has none. */
 export type FeedbackPlayed = { haptic: boolean; sound: boolean; headphones: boolean };
 

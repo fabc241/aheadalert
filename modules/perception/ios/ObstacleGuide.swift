@@ -3,6 +3,7 @@
 // MVP step 1.3: vibration per zone and directional sound with each alert, vibration when suspended (GuideFeedback).
 // MVP step 1.4: warning before a passage from light to dark or back (LightAnalyzer), 5 times a second on every
 // camera frame, also while the obstacle alerts are suspended (in a dark room the lit door is what matters).
+// MVP step 1.5 (experimental): step down and step up ahead ("Gradino giù / su, un metro"), from the same analysis.
 // Everything runs natively; JavaScript only starts/stops the guide and receives a status once a second.
 //
 // Pipeline per frame:
@@ -81,8 +82,13 @@ final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
   /// Short on purpose: the user keeps walking while it is spoken (about half a second per word).
   static func message(_ zone: Zone, _ hit: ZoneHit) -> String {
     let dist = ["", "mezzo metro", "un metro", "un metro e mezzo", "due metri"][step(hit.distance)]
+    if hit.stepUp { return "Gradino su, \(dist)" }
     let place = zone.spoken.prefix(1).uppercased() + zone.spoken.dropFirst()
     return "\(place)\(hit.low ? ", basso" : ""), \(dist)"
+  }
+
+  static func dropMessage(_ hit: DropHit) -> String {
+    "Gradino giù, " + ["", "mezzo metro", "un metro", "un metro e mezzo", "due metri"][step(hit.distance)]
   }
 }
 
@@ -152,18 +158,27 @@ final class GuideRecorder {
 
   func close() { dir = nil }
 
-  func maybeSave(image: CVPixelBuffer, depth: DepthMap, camera: CameraSnapshot, floor: (y: Float, floor: Bool),
+  func maybeSave(image: CVPixelBuffer, depth: DepthMap, camera: CameraSnapshot, floor: FloorPlane,
                  features: [SIMD3<Float>], analysis: FrameAnalysis, light: LightAnalysis?) {
     guard let base = nextBase(image: image) else { return }
     depth.values.withUnsafeBufferPointer { try? Data(buffer: $0).write(to: base.appendingPathExtension("depth")) }
     let zones: [Any] = analysis.zones.map { h -> Any in
       guard let h else { return NSNull() }
-      return ["distance": h.distance, "low": h.low, "area": h.area]
+      return ["distance": h.distance, "low": h.low, "area": h.area, "stepUp": h.stepUp]
     }
+    // Step 1.5: the step down as seen, before the checks, with the values the checks use
+    let drop: Any = analysis.dropSeen.map { d -> Any in
+      ["distance": d.distance, "depth": d.depth, "area": d.area, "floorBefore": d.floorBefore, "jump": d.jump,
+       "featuresFloor": analysis.dropFeatures.floor, "featuresBelow": analysis.dropFeatures.below,
+       "accepted": analysis.drop != nil]
+    } ?? NSNull()
     let meta: [String: Any] = [
       "time": Date().timeIntervalSince1970,
       "depthWidth": depth.width, "depthHeight": depth.height,
-      "floorY": floor.y, "floorClassified": floor.floor,
+      "floorY": floor.y, "floorClassified": floor.classified,
+      // step 1.5: whether the floor is the plane under the phone, and its outline (world x, z), to check later
+      // whether ARKit's floor goes on where a step down is seen
+      "floorUnderUser": floor.underUser, "usualHeight": floor.usualHeight, "floorBoundary": floor.boundary.flatMap { [$0.x, $0.y] }, "drop": drop,
       "scaleOk": analysis.scaleOk, "scaleA": analysis.scaleA, "scaleB": analysis.scaleB,
       "scaleSource": analysis.scaleSource, "walls": analysis.walls,
       "walkDirection": camera.walkDirection.map { [$0.x, $0.y, $0.z] } ?? NSNull(),
@@ -226,6 +241,15 @@ final class GuideRecorder {
   }
 }
 
+/// The floor ARKit has found (step 1.5: preferably the plane under the user).
+struct FloorPlane {
+  let y: Float
+  let classified: Bool  // ARKit classifies it as floor
+  let underUser: Bool  // the phone is above its outline
+  let boundary: [SIMD2<Float>]  // outline, world x and z
+  let usualHeight: Float  // of the phone above the floor, when this plane was chosen
+}
+
 // MARK: - Guide
 
 final class ObstacleGuide: NSObject, ARSessionDelegate {
@@ -246,6 +270,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   private var lastWalk: SIMD3<Float>?
   private var lastLightRun: Double = 0
   private var cameraHeight = LightTuning.defaultCameraHeight  // above the floor, kept from the last frame with floor
+  private var heights: [Float] = []  // step 1.5: recent heights of the phone above the floor (see floorPlane)
   private var latestLight: LightAnalysis?  // for the recording of the next analysed frame
 
   // main
@@ -256,6 +281,12 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   private var lastSpoken: [Double] = [-100, -100, -100]
   private var lastStep: [Int?] = [nil, nil, nil]  // distance step per zone while it stays occupied (see alertIfNeeded)
   private var lastConfirmed: [Double] = [-100, -100, -100]
+  // step 1.5: step down, tracked like a fourth zone
+  private var dropTrack: [DropHit?] = []
+  private var dropLastSpoken: Double = -100
+  private var dropLastStep: Int?
+  private var dropLastConfirmed: Double = -100
+  private var lastStepText = ""
   private var lastHint: Double = -100
   private var uprightSince: Double?
   private var reliability = ReliabilityMonitor(now: 0)
@@ -268,7 +299,8 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   private var lightView: LightAnalysis?  // latest light analysis, for the stat line
   private var inferences = 0
   private var state = "starting"
-  private var stat = (frames: 0, scaleOk: 0, fromFeatures: 0, fresh: 0, inliers: 0, candidates: 0, msSum: 0.0)
+  private var stat = (frames: 0, scaleOk: 0, fromFeatures: 0, fresh: 0, inliers: 0, candidates: 0, msSum: 0.0,
+                      dropSeen: 0, drop: 0)
 
   func start(completion: @escaping (Result<[String: Any], Error>) -> Void) {
     guard ARWorldTrackingConfiguration.isSupported else {
@@ -294,6 +326,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
         self.lastWalk = nil
         self.lastLightRun = 0
         self.cameraHeight = LightTuning.defaultCameraHeight
+        self.heights = []
         self.latestLight = nil
       }
       DispatchQueue.main.async {
@@ -360,6 +393,11 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     lastSpoken = [-100, -100, -100]
     lastStep = [nil, nil, nil]
     lastConfirmed = [-100, -100, -100]
+    dropTrack = []
+    dropLastSpoken = -100
+    dropLastStep = nil
+    dropLastConfirmed = -100
+    lastStepText = ""
     lastHint = -100
     uprightSince = nil
     reliability = ReliabilityMonitor(now: startTime)
@@ -372,7 +410,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     lightView = nil
     inferences = 0
     state = "starting"
-    stat = (0, 0, 0, 0, 0, 0, 0)
+    stat = (0, 0, 0, 0, 0, 0, 0, 0, 0)
   }
 
   // MARK: ARSessionDelegate (frameQueue)
@@ -392,7 +430,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       DispatchQueue.main.async { self.handle(nil, state: "tracking", detail: reason, light: light, ms: 0) }
       return
     }
-    guard let floor = Self.floorPlane(frame: frame) else {
+    guard let floor = floorPlane(frame: frame) else {
       DispatchQueue.main.async { self.handle(nil, state: "searchingFloor", detail: "", light: light, ms: 0) }
       return
     }
@@ -438,7 +476,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     case .limited(let r): trackingText = "\(r)"
     case .normal: normal = true; trackingText = "normal"
     }
-    let floor = normal ? Self.floorPlane(frame: frame) : nil
+    let floor = normal ? floorPlane(frame: frame) : nil
     if let floor { cameraHeight = frame.camera.transform.columns.3.y - floor.y }
     let pixelBuffer = frame.capturedImage
     guard let ambient = frame.lightEstimate.map({ Float($0.ambientIntensity) }), let grid = Self.lumaGrid(pixelBuffer) else { return }
@@ -507,20 +545,50 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     log.write("error", error.localizedDescription)
   }
 
-  /// World height of the floor: the lowest plane ARKit classifies as floor, otherwise the lowest horizontal
-  /// plane at least 50 cm below the phone.
-  private static func floorPlane(frame: ARFrame) -> (y: Float, floor: Bool)? {
-    let camY = frame.camera.transform.columns.3.y
-    var best: (y: Float, floor: Bool)?
+  /// The floor the user stands on. Step 1.5: the phone is held at about the same height all the time, so the floor
+  /// is a plane at that distance below it (±30 cm), and a plane much lower or higher is not it. On the stairs of
+  /// 19/10 the lowest plane was the floor below: the phone seemed 2 m above it, railing, wall and the landing all
+  /// stood "above the floor" (false alerts on the sides, a "Gradino su" while looking down). With no plane at the
+  /// right height there is no floor (no alerts, "Cerco il pavimento"). Among the planes at that height: classified
+  /// as floor first, then under the phone, then the nearest to the usual height. The usual height is the median of
+  /// the last 300 floors chosen (1.15 m at the start: 1.0–1.25 m in the home tests of 18/10).
+  private func floorPlane(frame: ARFrame) -> FloorPlane? {
+    let cam = frame.camera.transform.columns.3
+    let usual = heights.isEmpty ? StepTuning.usualHeight : heights.sorted()[heights.count / 2]
+    var best: (plane: FloorPlane, rank: (Int, Int, Float))?
     for case let p as ARPlaneAnchor in frame.anchors where p.alignment == .horizontal {
       let y = (p.transform * SIMD4(p.center, 1)).y
-      guard camY - y >= 0.5 && camY - y <= 2.2 else { continue }
+      guard abs(cam.y - y - usual) <= StepTuning.heightTolerance else { continue }
       var isFloor = false
       if case .floor = p.classification { isFloor = true }
-      if let b = best, (b.floor && !isFloor) || (b.floor == isFloor && b.y <= y) { continue }
-      best = (y, isFloor)
+      let boundary = p.geometry.boundaryVertices.map { v -> SIMD2<Float> in
+        let w = p.transform * SIMD4(v, 1)
+        return SIMD2(w.x, w.z)
+      }
+      let plane = FloorPlane(y: y, classified: isFloor, underUser: Self.inside(SIMD2(cam.x, cam.z), boundary),
+                             boundary: boundary, usualHeight: usual)
+      let rank = (isFloor ? 1 : 0, plane.underUser ? 1 : 0, -abs(cam.y - y - usual))
+      if let b = best, b.rank >= rank { continue }
+      best = (plane, rank)
     }
-    return best
+    if let best {
+      heights.append(cam.y - best.plane.y)
+      if heights.count > 300 { heights.removeFirst() }
+    }
+    return best?.plane
+  }
+
+  /// Point in polygon (even-odd rule).
+  private static func inside(_ p: SIMD2<Float>, _ poly: [SIMD2<Float>]) -> Bool {
+    guard poly.count >= 3 else { return false }
+    var inside = false
+    var j = poly.count - 1
+    for i in 0..<poly.count {
+      let a = poly[i], b = poly[j]
+      if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x { inside.toggle() }
+      j = i
+    }
+    return inside
   }
 
   // MARK: Alerts (main)
@@ -547,6 +615,8 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       reliability.analysis(scaleFresh: fresh, now: now)
       stat.inliers += a.fitInliers
       stat.candidates += a.fitCandidates
+      if a.dropSeen != nil { stat.dropSeen += 1 }
+      if a.drop != nil { stat.drop += 1 }
     }
     let changed = reliability.update(now: now)
     if changed {
@@ -560,6 +630,8 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
         tracks[zone.rawValue].append(a.zones[zone.rawValue])
         if tracks[zone.rawValue].count > GuideTuning.window { tracks[zone.rawValue].removeFirst() }
       }
+      dropTrack.append(a.drop)
+      if dropTrack.count > StepTuning.window { dropTrack.removeFirst() }
       uprightSince = a.nearestFloor > GuideTuning.tiltDownDist ? (uprightSince ?? now) : nil
       // Alerts need an analysed frame with light: while the guide is suspended (no tracking, no floor, or black
       // frames) nothing is announced. They resume with the first good frame, before "Avvisi di nuovo affidabili"
@@ -568,10 +640,12 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     } else if analysis != nil {
       // black frames although ARKit still tracks: what they show is not trusted, not even a moment later
       tracks = [[], [], []]
+      dropTrack = []
       uprightSince = nil
     } else {
       // no depth this frame (no tracking or no floor yet): zones decay
       for zone in Zone.allCases where !tracks[zone.rawValue].isEmpty { tracks[zone.rawValue].removeFirst() }
+      if !dropTrack.isEmpty { dropTrack.removeFirst() }
     }
 
     speakLightIfPossible(now: now)
@@ -604,6 +678,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     // (another obstacle, or a false hit gone), getting closer again is announced. With the nearest one, a false hit
     // half a metre ahead kept "davanti" silent for a whole walk in the kitchen (test of 18/10 night: 1 message ahead,
     // 52 on the sides).
+    if !dropAlertIfNeeded(now: now) { return }  // step 1.5: a step down goes first
     var candidates: [(zone: Zone, hit: ZoneHit)] = []
     for zone in Zone.allCases {
       let i = zone.rawValue
@@ -614,7 +689,12 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       }
       lastConfirmed[i] = now
       let low = hits.filter(\.low).count * 2 > hits.count
-      candidates.append((zone, ZoneHit(distance: latest.distance, low: low, area: latest.area)))  // latest: less delay
+      let stepUp = hits.filter(\.stepUp).count * 2 > hits.count
+      candidates.append((zone, ZoneHit(distance: latest.distance, low: low, area: latest.area, stepUp: stepUp)))  // latest: less delay
+    }
+    // A step up spans the walking line: its ends on the sides are the same step, not two more low obstacles.
+    if let up = candidates.first(where: { $0.zone == .ahead && $0.hit.stepUp }) {
+      candidates.removeAll { $0.zone != .ahead && $0.hit.low && abs($0.hit.distance - up.hit.distance) <= 0.3 }
     }
     // Nearest first; "ahead" wins a tie.
     candidates.sort { ($0.hit.distance, $0.zone == .ahead ? 0 : 1) < ($1.hit.distance, $1.zone == .ahead ? 0 : 1) }
@@ -632,17 +712,52 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       let text = GuideVoice.message(c.zone, c.hit)
       // Vibration and sound first: they are felt while the voice is still starting.
       let t0 = DispatchTime.now().uptimeNanoseconds
-      let played = feedback.play(FeedbackKind(c.zone), step: step, low: c.hit.low)
+      let played = feedback.play(c.hit.stepUp ? .step : FeedbackKind(c.zone), step: step, low: c.hit.low)
       let ms = elapsedMs(since: t0)
       voice.say(text, zone: c.zone, interrupt: voice.speaking)
       lastSpoken[i] = now
       lastStep[i] = step
       lastAlertText = text
+      if c.hit.stepUp { lastStepText = "su, " + text.dropFirst("Gradino su, ".count) }
       log.write("alert", zone: c.zone.key, distance: c.hit.distance, low: c.hit.low,
                 String(format: "%@; area %.3f m2; reliability %@; haptic %d sound %d in %.1f ms", text, c.hit.area,
                        reliability.level.rawValue, played.haptic ? 1 : 0, played.sound ? 1 : 0, ms))
       return
     }
+  }
+
+  /// Step 1.5: a step down is confirmed in 5 of the last 8 frames (half a second: a false one on a flat floor lasts
+  /// less) and announced like an obstacle: when it appears and at each half metre closer. It goes before the
+  /// obstacles, but never cuts a message short. Returns false when it has spoken, or while it waits for the voice:
+  /// no obstacle message starts then.
+  private func dropAlertIfNeeded(now: Double) -> Bool {
+    let hits = dropTrack.compactMap { $0 }
+    guard hits.count >= StepTuning.hitsNeeded, let latest = dropTrack.last(where: { $0 != nil }) ?? nil else {
+      if now - dropLastConfirmed > GuideTuning.zoneClearAfter { dropLastStep = nil }
+      return true
+    }
+    dropLastConfirmed = now
+    let step = GuideVoice.step(latest.distance)
+    if let last = dropLastStep, step >= last {
+      dropLastStep = step
+      return true
+    }
+    guard now - dropLastSpoken >= GuideTuning.zoneCooldown else { return true }
+    if voice.speaking { return false }
+    let text = GuideVoice.dropMessage(latest)
+    let t0 = DispatchTime.now().uptimeNanoseconds
+    let played = feedback.play(.step, step: step)
+    let ms = elapsedMs(since: t0)
+    voice.say(text, zone: .ahead)
+    dropLastSpoken = now
+    dropLastStep = step
+    lastAlertText = text
+    lastStepText = "giù, " + text.dropFirst("Gradino giù, ".count)
+    log.write("step", zone: "down", distance: latest.distance,
+              String(format: "%@; %.2f m lower, jump %.2f m, floor before %.3f m2, area %.3f m2; reliability %@; haptic %d sound %d in %.1f ms",
+                     text, latest.depth, latest.jump, latest.floorBefore, latest.area, reliability.level.rawValue,
+                     played.haptic ? 1 : 0, played.sound ? 1 : 0, ms))
+    return false
   }
 
   // MARK: Light passages (main, step 1.4)
@@ -698,20 +813,20 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       String(format: "feet %.0f, dark %.0f%%, bright %.0f%%%@", v.feet, 100 * v.darkShare, 100 * v.brightShare,
              v.kind.map { ", \($0.rawValue) passage" } ?? "")
     } ?? "-"
-    log.write("stat", String(format: "fps %.1f; infer+analysis %.0f ms; scale ok %d/%d (features %d, fresh %d); fit %d/%d; %@; %@; voice %@; light %@; tracking %@; reliability %@ %@; light passage %@",
+    log.write("stat", String(format: "fps %.1f; infer+analysis %.0f ms; scale ok %d/%d (features %d, fresh %d); fit %d/%d; %@; %@; voice %@; light %@; tracking %@; reliability %@ %@; light passage %@; step down %d/%d frames (seen/accepted)",
                              fps, stat.msSum / Double(n), stat.scaleOk, stat.frames, stat.fromFeatures, stat.fresh,
                              stat.inliers / n, stat.candidates / n, zones, MemoryProbe.thermal(),
                              voice.speaking ? "busy" : "free", lightText, state,
-                             reliability.level.rawValue, reliability.reason.rawValue, view))
+                             reliability.level.rawValue, reliability.reason.rawValue, view, stat.dropSeen, stat.drop))
     let upright = uprightSince.map { now - $0 > 3 } ?? false
     var status: [String: Any] = [
       "state": upright && state == "active" ? "upright" : state, "fps": fps, "lastAlert": lastAlertText,
       "thermal": MemoryProbe.thermal(), "reliability": reliability.level.rawValue,
-      "reliabilityReason": reliability.reason.rawValue, "lastLight": lastLightText,
+      "reliabilityReason": reliability.reason.rawValue, "lastLight": lastLightText, "lastStep": lastStepText,
     ]
     if let l = reliability.light { status["light"] = l }
     onStatus?(status)
-    stat = (0, 0, 0, 0, 0, 0, 0)
+    stat = (0, 0, 0, 0, 0, 0, 0, 0, 0)
   }
 
   private var lightText: String { reliability.light.map { String(format: "%.0f", $0) } ?? "-" }

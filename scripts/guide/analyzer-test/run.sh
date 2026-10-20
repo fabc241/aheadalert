@@ -4,5 +4,5 @@
 set -e
 cd "$(dirname "$0")/../../.."
 OUT=${TMPDIR:-/tmp}/guide-analyzer-test
-swiftc -O modules/perception/ios/ObstacleAnalyzer.swift scripts/guide/analyzer-test/main.swift -o "$OUT"
+swiftc -O modules/perception/ios/ObstacleAnalyzer.swift scripts/guide/analyzer-test/Scene.swift scripts/guide/analyzer-test/main.swift -o "$OUT"
 "$OUT"

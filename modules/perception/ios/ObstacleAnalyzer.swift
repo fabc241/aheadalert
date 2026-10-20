@@ -1,6 +1,8 @@
 // MVP step 1.1: per-frame geometry of the obstacle guide (no ARKit here, so it can be tested on the Mac:
 // scripts/guide/analyzer-test).
 // Depth map + camera pose + floor height + ARKit feature points → obstacle hits in three zones (left / ahead / right).
+// MVP step 1.5 (experimental): a step down (floor continuing lower on the walking line) and a step up (a low, wide
+// obstacle straight ahead).
 import CoreGraphics
 import simd
 
@@ -36,6 +38,36 @@ enum GuideTuning {
   static let hintEvery: Double = 10
 }
 
+/// Step 1.5: steps down and up. A stair is 15–18 cm high; below 10 cm (thresholds, low kerbs) nothing is promised.
+enum StepTuning {
+  static let dropMin: Float = 0.12  // m below the floor: a step down. Depth noise on a flat floor reaches 10 cm
+  static let dropMax: Float = 1.5  // deeper than this it is a wrong scale, not a step
+  static let halfWidth: Float = 0.30  // m either side of the walking line, as "davanti"
+  static let minArea: Float = 0.03  // m² of lower floor
+  /// ARKit feature points beyond the edge at the height of the floor mean the floor goes on: on a shiny floor the
+  /// depth model sees the reflections of doors and furniture as a space below it (recordings of 18/10).
+  static let featureFloorTol: Float = 0.05, featureFloorMin = 3
+  /// A real edge has floor before it, and the height jumps there. Without these checks the 2,089 analysed frames of
+  /// the flat home (18/10) gave a step down in 11% of them, mostly where a wrong scale bends the far floor downwards;
+  /// with them 8 isolated frames remain. Synthetic stairs: jump 0.14–0.17 m. Provisional, to tune on real stairs.
+  static let minFloorBefore: Float = 0.05  // m²
+  static let minJump: Float = 0.10  // m
+  /// Step up: the front of the nearest obstacle ahead (its first 20 cm) is low and spans the walking line.
+  static let upFront: Float = 0.20, upMaxTop: Float = 0.30, upMinSpread: Float = 0.40
+  static let window = 8, hitsNeeded = 5  // frames (~0.5 s at 15 fps) for a step down
+  /// The phone's height above the floor it stands on, before the session has its own (see ObstacleGuide.floorPlane).
+  static let usualHeight: Float = 1.15, heightTolerance: Float = 0.30
+}
+
+/// A step down ahead: where the floor ends (the edge), and how much lower the floor beyond it is.
+struct DropHit {
+  let distance: Float  // m ahead, to the edge
+  let depth: Float  // m below the floor (median of what is seen beyond the edge)
+  let area: Float  // m²
+  var floorBefore: Float = 0  // m² of floor seen on the walking line in the 60 cm before the edge
+  var jump: Float = 0  // m: floor height in the 30 cm before the edge minus the height in the 40 cm after it
+}
+
 enum Zone: Int, CaseIterable {
   case left, ahead, right
   var key: String { ["left", "ahead", "right"][rawValue] }
@@ -46,6 +78,7 @@ struct ZoneHit {
   let distance: Float  // m ahead, nearest part of the obstacle
   let low: Bool
   let area: Float  // m²
+  var stepUp = false  // step 1.5: low and as wide as the walking line, only for "ahead"
 }
 
 /// Camera values copied out of the ARFrame (never retain the frame itself: ARKit runs out of buffers).
@@ -66,6 +99,9 @@ struct FrameAnalysis {
   var fitInliers = 0
   var fitCandidates = 0
   var nearestFloor: Float = .infinity  // m ahead (horizontal): closest floor point in view, to detect an upright phone
+  var drop: DropHit?  // step 1.5
+  var dropSeen: DropHit?  // before the check on the ARKit feature points (for the recording)
+  var dropFeatures = (floor: 0, below: 0)  // ARKit feature points beyond the edge: at floor height, below it
 }
 
 // MARK: - Per-frame geometry
@@ -188,6 +224,9 @@ final class ObstacleAnalyzer {
     let pixelArea = (Float(s) * su / fx) * (Float(s) * sv / fy)  // m² per sample at 1 m
     var points: [ObstaclePoint] = []
     var floorPoints: [SIMD2<Float>] = []  // (ahead, lateral) of visible free floor
+    let camHeight = origin.y - floorY
+    var lower: [(edge: Float, depth: Float, area: Float, ahead: Float)] = []  // step 1.5: floor seen below the floor
+    var line: [(ahead: Float, h: Float, area: Float)] = []  // step 1.5: floor level on the walking line
     for k in 0..<rays.count {
       let inv = (disparities[k] - scale.b) / scale.a
       guard inv > 0.125 else { continue }  // farther than 8 m, or invalid
@@ -196,9 +235,16 @@ final class ObstacleAnalyzer {
       let fromPhone = simd_dot(rel, fwd)
       guard fromPhone >= GuideTuning.minForward else { continue }
       let ahead = fromPhone + GuideTuning.bodyOffset  // from the body
-      guard ahead <= GuideTuning.alertDistance else { continue }
       let h = origin.y + rel.y - floorY
       let lateral = simd_dot(rel, right)
+      // A point below the floor is seen past an edge: the edge is where its ray crosses the height of the floor.
+      if h <= -StepTuning.dropMin && h >= -StepTuning.dropMax && abs(lateral) <= StepTuning.halfWidth {
+        let edge = fromPhone * camHeight / (camHeight - h) + GuideTuning.bodyOffset
+        if edge <= GuideTuning.alertDistance { lower.append((edge, -h, z * z * pixelArea, ahead)) }
+      } else if h > -StepTuning.dropMin && h < GuideTuning.minHeight && abs(lateral) <= StepTuning.halfWidth {
+        line.append((ahead, h, z * z * pixelArea))
+      }
+      guard ahead <= GuideTuning.alertDistance else { continue }
       guard abs(lateral) <= GuideTuning.wallSearchWidth else { continue }
       if h < GuideTuning.minHeight {
         if h > -GuideTuning.minHeight { floorPoints.append(SIMD2(ahead, lateral)) }
@@ -233,9 +279,65 @@ final class ObstacleAnalyzer {
       // Height of the nearest object only (points within 30 cm behind its front).
       let heights = pts.filter { $0.ahead <= dist + 0.3 }.map(\.height).sorted()
       let top = heights.isEmpty ? 0 : heights[min(heights.count - 1, heights.count * 9 / 10)]
-      out.zones[zone.rawValue] = ZoneHit(distance: dist, low: top < GuideTuning.lowHeight, area: area)
+      var hit = ZoneHit(distance: dist, low: top < GuideTuning.lowHeight, area: area)
+      if zone == .ahead && hit.low { hit.stepUp = Self.isStepUp(pts, front: dist) }
+      out.zones[zone.rawValue] = hit
+    }
+
+    if var drop = Self.drop(lower) {
+      var before: [Float] = [], after: [Float] = []
+      for p in line where p.ahead >= drop.distance - 0.6 && p.ahead <= drop.distance + 0.5 {
+        if abs(p.h) <= 0.05 && p.ahead <= drop.distance { drop.floorBefore += p.area }
+        if p.ahead >= drop.distance - 0.3 && p.ahead < drop.distance { before.append(p.h) }
+        if p.ahead >= drop.distance && p.ahead <= drop.distance + 0.4 { after.append(p.h) }
+      }
+      for p in lower where p.ahead >= drop.distance && p.ahead <= drop.distance + 0.4 { after.append(-p.depth) }
+      if !before.isEmpty && !after.isEmpty {
+        drop.jump = before.sorted()[before.count / 2] - after.sorted()[after.count / 2]
+      }
+      out.dropSeen = drop
+      out.dropFeatures = Self.featuresBeyond(drop, features: features, origin: origin, fwd: fwd, right: right,
+                                             floorY: floorY)
+      let f = out.dropFeatures
+      let floorGoesOn = f.floor >= StepTuning.featureFloorMin && f.floor > 2 * f.below
+      if !floorGoesOn && drop.floorBefore >= StepTuning.minFloorBefore && drop.jump >= StepTuning.minJump {
+        out.drop = drop
+      }
     }
     return out
+  }
+
+  /// Step 1.5: the lower floor beyond an edge, if there is enough of it.
+  private static func drop(_ lower: [(edge: Float, depth: Float, area: Float, ahead: Float)]) -> DropHit? {
+    let area = lower.reduce(0) { $0 + $1.area }
+    guard area >= StepTuning.minArea, !lower.isEmpty else { return nil }
+    let edges = lower.map(\.edge).sorted(), depths = lower.map(\.depth).sorted()
+    return DropHit(distance: edges[edges.count / 10], depth: depths[depths.count / 2], area: area)
+  }
+
+  /// ARKit feature points from 10 cm to 1 m beyond the edge, on the walking line: at the floor's height, and below it.
+  private static func featuresBeyond(_ drop: DropHit, features: [SIMD3<Float>], origin: SIMD3<Float>,
+                                     fwd: SIMD3<Float>, right: SIMD3<Float>, floorY: Float) -> (floor: Int, below: Int) {
+    var n = (floor: 0, below: 0)
+    for p in features {
+      let rel = p - origin
+      let ahead = simd_dot(rel, fwd) + GuideTuning.bodyOffset
+      guard ahead >= drop.distance + 0.1 && ahead <= drop.distance + 1.0,
+            abs(simd_dot(rel, right)) <= StepTuning.halfWidth + 0.1 else { continue }
+      let h = p.y - floorY
+      if abs(h) <= StepTuning.featureFloorTol { n.floor += 1 } else if h <= -StepTuning.dropMin / 2 { n.below += 1 }
+    }
+    return n
+  }
+
+  /// Step 1.5: the front of the nearest obstacle ahead is low and spans the walking line (a box or a bag is narrower).
+  private static func isStepUp(_ pts: [ObstaclePoint], front: Float) -> Bool {
+    let near = pts.filter { $0.ahead <= front + StepTuning.upFront }
+    guard near.count >= 10 else { return false }
+    let heights = near.map(\.height).sorted(), laterals = near.map(\.lateral).sorted()
+    let top = heights[heights.count * 9 / 10]
+    let spread = laterals[laterals.count * 9 / 10] - laterals[laterals.count / 10]
+    return top <= StepTuning.upMaxTop && spread >= StepTuning.upMinSpread
   }
 
   /// A wall along the path on one side (sign −1 left, +1 right): a line lateral = c + k·ahead through the points,

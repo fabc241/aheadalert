@@ -53,9 +53,15 @@ for n in names {
   sources[a.scaleSource, default: 0] += 1
   let zones = Zone.allCases.map { z -> String in
     guard let hit = a.zones[z.rawValue] else { return "\(z.key) -" }
-    return String(format: "%@ %.2f%@", z.key, hit.distance, hit.low ? " low" : "")
+    return String(format: "%@ %.2f%@%@", z.key, hit.distance, hit.low ? " low" : "", hit.stepUp ? " stepUp" : "")
   }.joined(separator: "  ")
+  // Step 1.5: step down, before and after the check on the ARKit feature points
+  let drop = a.dropSeen.map {
+    String(format: "drop %.2f m, %.2f below, %.3f m2, floor before %.3f, jump %.2f, features floor %d below %d%@",
+           $0.distance, $0.depth, $0.area, $0.floorBefore, $0.jump, a.dropFeatures.floor, a.dropFeatures.below,
+           a.drop == nil ? " (vetoed)" : "")
+  } ?? "drop -"
   let walls = (a.walls[0] ? "L" : "-") + (a.walls[1] ? "R" : "-")
-  print("\(n) | \(a.scaleSource) \(a.fitInliers)/\(a.fitCandidates) | walls \(walls) walk \(walk == nil ? "-" : "y") | \(zones)")
+  print("\(n) | \(a.scaleSource) \(a.fitInliers)/\(a.fitCandidates) | walls \(walls) walk \(walk == nil ? "-" : "y") | \(zones) | \(drop)")
 }
 print("scale source: \(sources)")
