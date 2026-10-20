@@ -1,4 +1,4 @@
-// Native perception module. MVP features: obstacle guide (ObstacleGuide.swift, step 1.1), its vibrations and sounds (GuideFeedback.swift, step 1.3), light-passage warning (LightAnalyzer.swift, step 1.4), steps down and up (ObstacleAnalyzer.swift, step 1.5).
+// Native perception module. MVP features: obstacle guide (ObstacleGuide.swift, step 1.1), its vibrations and sounds (GuideFeedback.swift, step 1.3), light-passage warning (LightAnalyzer.swift, step 1.4), steps down and up (ObstacleAnalyzer.swift, step 1.5), settings (GuideSettings.swift, step 1.6).
 // Phase 0B (iPhone 13): on-device measurements to decide what goes into the MVP.
 // - Depth Anything V2 Small (Core ML) on photos and live ARKit frames, per compute unit
 // - memory (phys_footprint, the metric iOS uses for out-of-memory termination) and thermal state
@@ -38,6 +38,16 @@ public class PerceptionModule: Module {
 
     AsyncFunction("stopGuide") { (promise: Promise) in
       self.guide.stop { promise.resolve(nil) }
+    }
+
+    // MVP step 1.6: the guide's settings, kept on the phone. Applied at once, also while the guide runs.
+    Function("guideSettings") { () -> [String: Any] in GuideSettings.load().dictionary }
+
+    Function("setGuideSettings") { (values: [String: Any]) -> [String: Any] in
+      let settings = GuideSettings(values)
+      settings.save()
+      self.guide.apply(settings)
+      return settings.dictionary
     }
 
     // MVP step 1.3: the guide's vibrations and sounds on their own, to learn them standing still and to check that

@@ -79,6 +79,13 @@ export type FeedbackKind = 'left' | 'ahead' | 'right' | 'suspended' | 'light' | 
 /** What was actually played: no sound without headphones, no vibration if the phone has none. */
 export type FeedbackPlayed = { haptic: boolean; sound: boolean; headphones: boolean };
 
+/**
+ * MVP step 1.6: the guide's settings, kept on the phone. alertDistance (m): obstacles and steps farther than this are
+ * not announced. Reliability messages are always spoken. Sound needs headphones and is never played with voiceOnly.
+ */
+export type AlertMode = 'voiceAndVibration' | 'vibrationOnly' | 'voiceOnly';
+export type GuideSettings = { alertDistance: 1 | 1.5 | 2; mode: AlertMode; headphoneSound: boolean };
+
 type Events = { onLiveProgress: (p: LiveProgress) => void; onGuideStatus: (s: GuideStatus) => void };
 
 declare class PerceptionNativeModule extends NativeModule<Events> {
@@ -86,6 +93,9 @@ declare class PerceptionNativeModule extends NativeModule<Events> {
   readonly autoRun: string;
   startGuide(): Promise<{ logPath: string }>;
   stopGuide(): Promise<void>;
+  guideSettings(): GuideSettings;
+  /** Saves the settings and applies them at once, also while the guide runs; returns them as saved. */
+  setGuideSettings(settings: GuideSettings): GuideSettings;
   startFeedbackTest(): Promise<{ haptics: boolean; headphones: boolean }>;
   /** step: distance step as spoken, 1 = half a metre … 4 = two metres (stronger when closer). */
   playFeedback(kind: FeedbackKind, step: number, low: boolean, haptic: boolean, sound: boolean): Promise<FeedbackPlayed>;

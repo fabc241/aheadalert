@@ -8,7 +8,7 @@ import simd
 
 /// Thresholds, tuned with the walking tests of 18/10 (step 1.1).
 enum GuideTuning {
-  static let alertDistance: Float = 2.0  // m ahead; becomes a setting in step 1.6
+  static let alertDistance: Float = 2.0  // m ahead, analysed; the user may choose less (GuideSettings, step 1.6)
   static let minForward: Float = 0.25  // m from the phone: closer points are the user's hands, or out of view
   /// Added to the distance from the phone (held at the chest, in front of the body). 0.4 m was tried on 18/10 and
   /// removed at the user's request: distances are measured from the phone until further distance tests.

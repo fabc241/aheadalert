@@ -4,6 +4,7 @@
 // MVP step 1.4: warning before a passage from light to dark or back (LightAnalyzer), 5 times a second on every
 // camera frame, also while the obstacle alerts are suspended (in a dark room the lit door is what matters).
 // MVP step 1.5 (experimental): step down and step up ahead ("Gradino giù / su, un metro"), from the same analysis.
+// MVP step 1.6: the user's settings (GuideSettings): alert distance, voice and/or vibration, sound with headphones.
 // Everything runs natively; JavaScript only starts/stops the guide and receives a status once a second.
 //
 // Pipeline per frame:
@@ -297,6 +298,8 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   private var pendingLight: (kind: LightKind, at: Double)?
   private var lastLightText = ""
   private var lightView: LightAnalysis?  // latest light analysis, for the stat line
+  private var settings = GuideSettings.load()  // step 1.6
+  private var signalQuietUntil: Double = 0  // step 1.6, vibration only: no new alert before this
   private var inferences = 0
   private var state = "starting"
   private var stat = (frames: 0, scaleOk: 0, fromFeatures: 0, fresh: 0, inliers: 0, candidates: 0, msSum: 0.0,
@@ -349,7 +352,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
         self.session.delegate = self
         self.session.delegateQueue = self.frameQueue
         self.session.run(config, options: [.resetTracking, .removeExistingAnchors])
-        self.log.write("start", "device \(PerceptionModule.modelIdentifier()), alert \(GuideTuning.alertDistance) m from the body, phone offset \(GuideTuning.bodyOffset) m")
+        self.log.write("start", "device \(PerceptionModule.modelIdentifier()), \(self.settings.logText) from the body, phone offset \(GuideTuning.bodyOffset) m")
         self.voice.say("Guida avviata")
         self.sessionStarted = true
         completion(.success(["logPath": self.log.path]))
@@ -387,6 +390,15 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     }
   }
 
+  /// Step 1.6: new settings from the settings screen (already saved), used from the next frame on.
+  func apply(_ new: GuideSettings) {
+    DispatchQueue.main.async {
+      guard new != self.settings else { return }
+      self.settings = new
+      if self.running { self.log.write("settings", new.logText) }
+    }
+  }
+
   private func resetMainState() {
     startTime = CACurrentMediaTime()
     tracks = [[], [], []]
@@ -408,6 +420,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     pendingLight = nil
     lastLightText = ""
     lightView = nil
+    signalQuietUntil = 0
     inferences = 0
     state = "starting"
     stat = (0, 0, 0, 0, 0, 0, 0, 0, 0)
@@ -626,11 +639,14 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     }
 
     if let a = analysis, reliability.raw != .unavailable {
+      // Step 1.6: what is farther than the distance set does not count, so that it is announced as new once it
+      // comes within that distance.
+      let limit = settings.alertDistance
       for zone in Zone.allCases {
-        tracks[zone.rawValue].append(a.zones[zone.rawValue])
+        tracks[zone.rawValue].append(a.zones[zone.rawValue].flatMap { $0.distance <= limit ? $0 : nil })
         if tracks[zone.rawValue].count > GuideTuning.window { tracks[zone.rawValue].removeFirst() }
       }
-      dropTrack.append(a.drop)
+      dropTrack.append(a.drop.flatMap { $0.distance <= limit ? $0 : nil })
       if dropTrack.count > StepTuning.window { dropTrack.removeFirst() }
       uprightSince = a.nearestFloor > GuideTuning.tiltDownDist ? (uprightSince ?? now) : nil
       // Alerts need an analysed frame with light: while the guide is suspended (no tracking, no floor, or black
@@ -707,21 +723,20 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       }
       guard now - lastSpoken[i] >= GuideTuning.zoneCooldown else { continue }
       // Only something close straight ahead may cut a message short; never a light warning (agreed for step 1.4).
-      let urgent = c.zone == .ahead && c.hit.distance <= 1.0 && voice.speakingZone != .ahead && !voice.speakingLight
-      if voice.speaking && !urgent { return }
+      // With vibration only nothing is cut: two vibrations at once would be felt as one.
+      let urgent = settings.voice && c.zone == .ahead && c.hit.distance <= 1.0 && voice.speakingZone != .ahead
+        && !voice.speakingLight
+      if signalBusy(now: now) && !urgent { return }
       let text = GuideVoice.message(c.zone, c.hit)
-      // Vibration and sound first: they are felt while the voice is still starting.
-      let t0 = DispatchTime.now().uptimeNanoseconds
-      let played = feedback.play(c.hit.stepUp ? .step : FeedbackKind(c.zone), step: step, low: c.hit.low)
-      let ms = elapsedMs(since: t0)
-      voice.say(text, zone: c.zone, interrupt: voice.speaking)
+      let played = signal(c.hit.stepUp ? .step : FeedbackKind(c.zone), step: step, low: c.hit.low, text: text,
+                          zone: c.zone, interrupt: voice.speaking, now: now)
       lastSpoken[i] = now
       lastStep[i] = step
       lastAlertText = text
       if c.hit.stepUp { lastStepText = "su, " + text.dropFirst("Gradino su, ".count) }
       log.write("alert", zone: c.zone.key, distance: c.hit.distance, low: c.hit.low,
                 String(format: "%@; area %.3f m2; reliability %@; haptic %d sound %d in %.1f ms", text, c.hit.area,
-                       reliability.level.rawValue, played.haptic ? 1 : 0, played.sound ? 1 : 0, ms))
+                       reliability.level.rawValue, played.haptic ? 1 : 0, played.sound ? 1 : 0, played.ms))
       return
     }
   }
@@ -743,12 +758,9 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       return true
     }
     guard now - dropLastSpoken >= GuideTuning.zoneCooldown else { return true }
-    if voice.speaking { return false }
+    if signalBusy(now: now) { return false }
     let text = GuideVoice.dropMessage(latest)
-    let t0 = DispatchTime.now().uptimeNanoseconds
-    let played = feedback.play(.step, step: step)
-    let ms = elapsedMs(since: t0)
-    voice.say(text, zone: .ahead)
+    let played = signal(.step, step: step, text: text, zone: .ahead, now: now)
     dropLastSpoken = now
     dropLastStep = step
     lastAlertText = text
@@ -756,7 +768,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     log.write("step", zone: "down", distance: latest.distance,
               String(format: "%@; %.2f m lower, jump %.2f m, floor before %.3f m2, area %.3f m2; reliability %@; haptic %d sound %d in %.1f ms",
                      text, latest.depth, latest.jump, latest.floorBefore, latest.area, reliability.level.rawValue,
-                     played.haptic ? 1 : 0, played.sound ? 1 : 0, ms))
+                     played.haptic ? 1 : 0, played.sound ? 1 : 0, played.ms))
     return false
   }
 
@@ -784,16 +796,34 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       log.write("light-dropped", p.kind.message)
       return
     }
-    guard !voice.speaking else { return }
+    guard !signalBusy(now: now) else { return }
     pendingLight = nil
-    let played = feedback.play(.light)  // first, as with the obstacle alerts
-    voice.say(p.kind.message, light: true)
+    let played = signal(.light, text: p.kind.message, light: true, now: now)
     lastLightText = p.kind.message
     log.write("light-voice", "\(p.kind.message); haptic \(played.haptic ? 1 : 0); waited \(String(format: "%.1f", now - p.at)) s")
   }
 
+  /// Step 1.6: whether a new alert must wait: while a message is spoken or, with vibration only, until the previous
+  /// vibration has been felt.
+  private func signalBusy(now: Double) -> Bool {
+    settings.voice ? voice.speaking : now < signalQuietUntil
+  }
+
+  /// Plays an alert as set (step 1.6): vibration and sound first, felt while the voice is still starting, then the
+  /// voice. Returns what was played and how long the vibration took to start.
+  private func signal(_ kind: FeedbackKind, step: Int = 2, low: Bool = false, text: String, zone: Zone? = nil,
+                      interrupt: Bool = false, light: Bool = false, now: Double) -> (haptic: Bool, sound: Bool, ms: Double) {
+    let t0 = DispatchTime.now().uptimeNanoseconds
+    let played = feedback.play(kind, step: step, low: low, haptic: settings.vibration, sound: settings.sound)
+    let ms = elapsedMs(since: t0)
+    if settings.voice { voice.say(text, zone: zone, interrupt: interrupt, light: light) }
+    signalQuietUntil = now + GuideSettings.vibrationGap
+    return (played.haptic, played.sound, ms)
+  }
+
   private func buzzSuspended(now: Double) {
     lastSuspendBuzz = now
+    guard settings.vibration else { return }  // step 1.6, voice only: the message is spoken all the same
     let played = feedback.play(.suspended)
     log.write("feedback", "suspended haptic \(played.haptic ? 1 : 0)")
   }

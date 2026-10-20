@@ -4,13 +4,15 @@
 // Step 1.3: the native module also vibrates (and plays a directional sound with headphones) with each alert.
 // Step 1.4: it also warns of a passage to a dark (or bright) zone ahead; the last warning is shown here.
 // Step 1.5: and of a step down or up ahead (experimental); the last one is shown here.
-import { Redirect, router } from 'expo-router';
+// Step 1.6: "Impostazioni" (alert distance, alert type, sound with headphones); the current choice is in its hint.
+import { Redirect, router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Perception, { type GuideStatus, type Reliability, type ReliabilityReason } from '../../modules/perception';
 import { BigButton } from '../ui/BigButton';
+import { DISTANCE_TEXT, settingsSummary } from '../ui/guideSettings';
 import { BLACK, WHITE, YELLOW } from '../ui/theme';
 
 const STATE_TEXT: Record<GuideStatus['state'] | 'loading', string> = {
@@ -47,7 +49,11 @@ export default function HomeScreen() {
   const [lastStep, setLastStep] = useState('');
   const [reliability, setReliability] = useState<ReliabilityState>(null);
   const [error, setError] = useState('');
+  const [settings, setSettings] = useState(() => Perception.guideSettings());
   const on = state !== 'stopped';
+
+  // Back from the settings screen: show the new choice.
+  useFocusEffect(useCallback(() => setSettings(Perception.guideSettings()), []));
 
   useEffect(() => {
     const sub = Perception.addListener('onGuideStatus', (s) => {
@@ -116,7 +122,7 @@ export default function HomeScreen() {
           hint={
             on
               ? 'Ferma gli avvisi e la fotocamera'
-              : 'Avvisa con voce e vibrazione degli ostacoli davanti e ai lati, entro 2 metri, dei gradini in su o in giù (funzione sperimentale) e del passaggio verso una zona buia o luminosa. Con le cuffie anche un suono dal lato dell’ostacolo. Tieni il telefono al petto, inclinato verso il basso'
+              : `Avvisa degli ostacoli davanti e ai lati, entro ${DISTANCE_TEXT[settings.alertDistance]}, dei gradini in su o in giù (funzione sperimentale) e del passaggio verso una zona buia o luminosa. Tieni il telefono al petto, inclinato verso il basso`
           }
           disabled={state === 'loading'}
           onPress={toggleGuide}
@@ -135,6 +141,11 @@ export default function HomeScreen() {
             <Text style={[styles.text, suspended && styles.suspendedLight]}>Luce: {lastLight}</Text>
           ) : null}
         </View>
+        <BigButton
+          title="Impostazioni"
+          hint={`${settingsSummary(settings)}. Cambia distanza e tipo degli avvisi`}
+          onPress={() => router.push('/settings')}
+        />
         <BigButton
           title="Prove tecniche"
           hint="Apre le prove della Fase 0 su profondità, descrizione, lettura e voce"
