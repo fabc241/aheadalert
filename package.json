@@ -35,5 +35,6 @@
     "bare-pack": "^2.2.5",
     "typescript": "~6.0.3"
   },
+  "license": "MIT",
   "private": true
 }

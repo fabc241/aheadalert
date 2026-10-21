@@ -5,7 +5,8 @@
 # Usage (from mobile/): scripts/voice/fetch-log.sh   → scripts/voice/logs/voice-log.csv (gitignored: personal)
 set -e
 cd "$(dirname "$0")"
-DEVICE=${DEVICE:-YOUR-IPHONE-UDID}
+[[ -f ../../.env.local ]] && source ../../.env.local  # local, not committed: DEVICE=<iPhone UDID>
+DEVICE=${DEVICE:?set DEVICE to the iPhone UDID (xcrun devicectl list devices), e.g. in .env.local}
 APP=io.github.fabc241.guidavisiva
 mkdir -p logs
 xcrun devicectl device copy from --device "$DEVICE" --domain-type appDataContainer --domain-identifier "$APP" \

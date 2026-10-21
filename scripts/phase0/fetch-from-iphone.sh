@@ -3,7 +3,8 @@
 # Usage (from mobile/): scripts/phase0/fetch-from-iphone.sh
 set -e
 cd "$(dirname "$0")"
-DEVICE=${DEVICE:-YOUR-IPHONE-UDID}
+[[ -f ../../.env.local ]] && source ../../.env.local  # local, not committed: DEVICE=<iPhone UDID>
+DEVICE=${DEVICE:?set DEVICE to the iPhone UDID (xcrun devicectl list devices), e.g. in .env.local}
 APP=io.github.fabc241.guidavisiva
 mkdir -p results/iphone
 for item in results shots; do

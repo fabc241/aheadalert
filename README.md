@@ -67,6 +67,13 @@ npm install
 npx expo prebuild --platform ios
 ```
 
+The signing team and the iPhone are personal settings, kept in `.env.local` (gitignored), which Expo and the scripts read:
+
+```bash
+APPLE_TEAM_ID=<your Apple team ID>
+DEVICE=<iPhone UDID from `xcrun devicectl list devices`>
+```
+
 Known pitfalls:
 
 - iOS 27 requires the UIScene life cycle, which is why the project uses Expo SDK 58.
@@ -107,4 +114,4 @@ Test photos, camera shots and everything derived from them stay on the developer
 
 ## Licence
 
-No licence has been chosen yet. The models used have their own licences, which must be checked before any distribution: some datasets used to train the vision-language model carry non-commercial terms.
+The code is released under the [MIT Licence](LICENSE). The models used are not part of this repository and have their own licences, which must be checked before any distribution: some datasets used to train the vision-language model carry non-commercial terms.

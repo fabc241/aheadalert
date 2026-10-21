@@ -3,7 +3,8 @@
 # (Documents/phase0). The photos stay out of the app bundle. Usage (from mobile/): scripts/phase0/copy-to-iphone.sh
 set -e
 cd "$(dirname "$0")"
-DEVICE=${DEVICE:-YOUR-IPHONE-UDID}
+[[ -f ../../.env.local ]] && source ../../.env.local  # local, not committed: DEVICE=<iPhone UDID>
+DEVICE=${DEVICE:?set DEVICE to the iPhone UDID (xcrun devicectl list devices), e.g. in .env.local}
 APP=io.github.fabc241.guidavisiva
 for item in models/DepthAnythingV2SmallF16.mlpackage real-photos images; do
   dest="Documents/phase0/$(basename "$item")"

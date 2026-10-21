@@ -7,7 +7,8 @@
 set -e
 cd "$(dirname "$0")/../../ios"
 export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
-DEVICE=${DEVICE:-YOUR-IPHONE-UDID}
+[[ -f ../.env.local ]] && source ../.env.local  # local, not committed: DEVICE=<iPhone UDID>
+DEVICE=${DEVICE:?set DEVICE to the iPhone UDID (xcrun devicectl list devices), e.g. in .env.local}
 APP=io.github.fabc241.guidavisiva
 if [[ -z "$SKIP_BUILD" ]]; then
   mkdir -p build
