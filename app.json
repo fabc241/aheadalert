@@ -1,21 +1,21 @@
 {
   "expo": {
-    "name": "Guida Visiva",
-    "slug": "guida-visiva",
+    "name": "AheadAlert",
+    "slug": "ahead-alert",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "io.github.fabc241.guidavisiva",
+      "bundleIdentifier": "io.github.fabc241.aheadalert",
       "infoPlist": {
         "NSCameraUsageDescription": "La fotocamera serve per riconoscere ostacoli, gradini e cambi di luce davanti a te. Le immagini restano sul telefono.",
         "NSMicrophoneUsageDescription": "Il microfono serve per i comandi vocali (\"Avvia guida\", \"Cosa ho davanti\"…). Ciò che dici resta sul telefono."
       }
     },
     "android": {
-      "package": "io.github.fabc241.guidavisiva",
+      "package": "io.github.fabc241.aheadalert",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
@@ -59,6 +59,6 @@
       ],
       "expo-router"
     ],
-    "scheme": "guidavisiva"
+    "scheme": "aheadalert"
   }
 }

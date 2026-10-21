@@ -9,14 +9,14 @@ cd "$(dirname "$0")/../../ios"
 export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 [[ -f ../.env.local ]] && source ../.env.local  # local, not committed: DEVICE=<iPhone UDID>
 DEVICE=${DEVICE:?set DEVICE to the iPhone UDID (xcrun devicectl list devices), e.g. in .env.local}
-APP=io.github.fabc241.guidavisiva
+APP=io.github.fabc241.aheadalert
 if [[ -z "$SKIP_BUILD" ]]; then
   mkdir -p build
-  xcodebuild -workspace GuidaVisiva.xcworkspace -scheme GuidaVisiva -configuration Release \
+  xcodebuild -workspace AheadAlert.xcworkspace -scheme AheadAlert -configuration Release \
     -destination "id=$DEVICE" -derivedDataPath build -allowProvisioningUpdates build > build/phase0-build.log 2>&1 \
     || { grep -E "error:" build/phase0-build.log | head -20; exit 1; }
   echo "Build succeeded."
-  xcrun devicectl device install app --device "$DEVICE" build/Build/Products/Release-iphoneos/GuidaVisiva.app >/dev/null
+  xcrun devicectl device install app --device "$DEVICE" build/Build/Products/Release-iphoneos/AheadAlert.app >/dev/null
   echo "Installed."
 fi
 args=(--device "$DEVICE" --terminate-existing --environment-variables "{\"PHASE0_AUTO\":\"${1:-}\"}")

@@ -184,8 +184,8 @@ export default function HomeScreen() {
 
   return (
     <Screen>
-      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.title} accessibilityRole="header">
-        Guida Visiva
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.title} accessibilityRole="header" accessibilityLabel="Ahead Alert">
+        AheadAlert
       </Text>
       {settings.voiceCommands ? (
         <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.text}>

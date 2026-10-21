@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")"
 [[ -f ../../.env.local ]] && source ../../.env.local  # local, not committed: DEVICE=<iPhone UDID>
 DEVICE=${DEVICE:?set DEVICE to the iPhone UDID (xcrun devicectl list devices), e.g. in .env.local}
-APP=io.github.fabc241.guidavisiva
+APP=io.github.fabc241.aheadalert
 for item in models/DepthAnythingV2SmallF16.mlpackage real-photos images; do
   dest="Documents/phase0/$(basename "$item")"
   echo "→ $item"

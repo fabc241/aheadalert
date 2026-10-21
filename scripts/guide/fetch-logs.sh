@@ -9,7 +9,7 @@ set -e
 cd "$(dirname "$0")"
 [[ -f ../../.env.local ]] && source ../../.env.local  # local, not committed: DEVICE=<iPhone UDID>
 DEVICE=${DEVICE:?set DEVICE to the iPhone UDID (xcrun devicectl list devices), e.g. in .env.local}
-APP=io.github.fabc241.guidavisiva
+APP=io.github.fabc241.aheadalert
 mkdir -p logs
 xcrun devicectl device copy from --device "$DEVICE" --domain-type appDataContainer --domain-identifier "$APP" \
   --source "Documents/guide" --destination logs >/dev/null

@@ -110,7 +110,7 @@ final class VoiceEngine {
   func start(completion: @escaping (Result<Void, Error>) -> Void) {
     AVAudioApplication.requestRecordPermission { granted in
       DispatchQueue.main.async {
-        guard granted else { return completion(.failure(Phase0Error("Microfono non autorizzato: consentilo in Impostazioni di iOS, Guida Visiva"))) }
+        guard granted else { return completion(.failure(Phase0Error("Microfono non autorizzato: consentilo in Impostazioni di iOS, AheadAlert"))) }
         self.wanted = true
         AppAudio.recording = true
         self.observe()

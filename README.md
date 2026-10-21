@@ -1,4 +1,4 @@
-# Guida Visiva
+# AheadAlert
 
 An offline mobility aid for people with low vision caused by a restricted visual field (for example retinitis pigmentosa). The phone camera warns about low and lateral obstacles, level changes such as steps and curbs, and light/dark transitions. A local assistant can describe the scene and read signs aloud.
 
