@@ -25,8 +25,8 @@ import simd
 
 // MARK: - Voice
 
-final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
-  private let synth = AVSpeechSynthesizer()
+final class GuideVoice {
+  private let out = SpeechOutput("guide")  // step 1.9: through the voice commands' engine while they listen
   private var current: AVSpeechUtterance?
   private var deadline: Double = 0
   private(set) var speakingZone: Zone?
@@ -34,9 +34,8 @@ final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
   private(set) var speakingLight = false  // the current message is a light-passage warning (step 1.4)
   var onEvent: ((String) -> Void)?  // for the log
 
-  override init() {
-    super.init()
-    synth.delegate = self
+  init() {
+    out.onDone = { [weak self] u, finished in self?.done(u, finished ? "finished" : "cancelled") }
   }
 
   /// Main thread only. True while our last message is being spoken. The 18/10 walking test showed that the
@@ -54,7 +53,7 @@ final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
 
   /// Main thread only. With VoiceOver on, the voice and rate chosen for VoiceOver are used.
   func say(_ text: String, zone: Zone? = nil, interrupt: Bool = false, reliability: Bool = false, light: Bool = false) {
-    if interrupt { synth.stopSpeaking(at: .immediate) }
+    if interrupt { out.stop() }
     let u = AVSpeechUtterance(string: text)
     u.voice = AVSpeechSynthesisVoice(language: "it-IT")
     u.rate = min(AVSpeechUtteranceMaximumSpeechRate, AVSpeechUtteranceDefaultSpeechRate * 1.1)
@@ -64,11 +63,9 @@ final class GuideVoice: NSObject, AVSpeechSynthesizerDelegate {
     speakingZone = zone
     speakingReliability = reliability
     speakingLight = light
-    synth.speak(u)
+    out.speak(u)
   }
 
-  func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) { done(u, "finished") }
-  func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel u: AVSpeechUtterance) { done(u, "cancelled") }
   private func done(_ u: AVSpeechUtterance, _ how: String) {
     DispatchQueue.main.async {
       guard u === self.current else { return }  // an older, interrupted message
@@ -348,9 +345,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
         }
         self.resetMainState()
         self.voice.onEvent = { [weak self] e in self?.log.write("voice", e) }
-        let audio = AVAudioSession.sharedInstance()
-        try? audio.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
-        try? audio.setActive(true)
+        AppAudio.activate()  // step 1.9: play and record while the voice commands listen
         self.feedback.onEvent = { [weak self] e in self?.log.write("feedback", e) }
         self.feedback.start()
         UIApplication.shared.isIdleTimerDisabled = true
@@ -621,7 +616,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
       }
       self.resetMainState()
       // Audio and haptic engines are stopped by iOS in the background: started again.
-      try? AVAudioSession.sharedInstance().setActive(true)
+      AppAudio.activate()
       self.feedback.stop()
       self.feedback.start()
       self.session.run(Self.config, options: [.resetTracking, .removeExistingAnchors])

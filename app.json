@@ -10,13 +10,15 @@
       "supportsTablet": false,
       "bundleIdentifier": "io.github.fabc241.guidavisiva",
       "infoPlist": {
-        "NSCameraUsageDescription": "La fotocamera serve per riconoscere ostacoli, gradini e cambi di luce davanti a te. Le immagini restano sul telefono."
+        "NSCameraUsageDescription": "La fotocamera serve per riconoscere ostacoli, gradini e cambi di luce davanti a te. Le immagini restano sul telefono.",
+        "NSMicrophoneUsageDescription": "Il microfono serve per i comandi vocali (\"Avvia guida\", \"Cosa ho davanti\"…). Ciò che dici resta sul telefono."
       }
     },
     "android": {
       "package": "io.github.fabc241.guidavisiva",
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

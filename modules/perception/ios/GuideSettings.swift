@@ -6,6 +6,7 @@
 // - Alert type: voice and vibration (default), vibration only, voice only. Reliability messages, "Inclina il telefono"
 //   and "Guida avviata / fermata" are always spoken (agreed: without the voice "visione ridotta" has no signal).
 // - Sound with headphones: on (default) or off. Never with "voice only".
+// Step 1.9: voice commands on (default) or off. Kept here with the others; the guide itself does not use it.
 import Foundation
 
 enum AlertMode: String {
@@ -21,6 +22,7 @@ struct GuideSettings: Equatable {
   var alertDistance: Float = GuideTuning.alertDistance
   var mode: AlertMode = .voiceAndVibration
   var headphoneSound = true
+  var voiceCommands = true
 
   var voice: Bool { mode != .vibrationOnly }
   var vibration: Bool { mode != .voiceOnly }
@@ -42,10 +44,11 @@ struct GuideSettings: Equatable {
     }
     if let m = (d["mode"] as? String).flatMap(AlertMode.init(rawValue:)) { mode = m }
     if let s = d["headphoneSound"] as? Bool { headphoneSound = s }
+    if let v = d["voiceCommands"] as? Bool { voiceCommands = v }
   }
 
   var dictionary: [String: Any] {
-    ["alertDistance": alertDistance, "mode": mode.rawValue, "headphoneSound": headphoneSound]
+    ["alertDistance": alertDistance, "mode": mode.rawValue, "headphoneSound": headphoneSound, "voiceCommands": voiceCommands]
   }
 
   var logText: String {

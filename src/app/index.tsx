@@ -9,11 +9,14 @@
 // bottom of the settings).
 // Step 1.8: "Cosa ho davanti?" between the two, with the guide on or off (src/assistant/describe.ts); while it speaks
 // it becomes "Ferma descrizione", and the description stays written below it.
+// Step 1.9: while this screen is shown the app listens for the voice commands (src/assistant/voiceCommands.ts), if on
+// in the settings: "Avvia guida", "Ferma guida", "Cosa ho davanti", "Basta" act like the buttons.
 import { Redirect, router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import Perception, { type GuideStatus, type Reliability, type ReliabilityReason } from '../../modules/perception';
 import { describe, stopDescribe, type DescribePhase, type DescribeResult } from '../assistant/describe';
+import { startListening, stopListening, type VoiceCommand } from '../assistant/voiceCommands';
 import { BigButton } from '../ui/BigButton';
 import { DISTANCE_TEXT, settingsSummary } from '../ui/guideSettings';
 import { Screen } from '../ui/Screen';
@@ -70,10 +73,28 @@ export default function HomeScreen() {
   const [describing, setDescribing] = useState(false);
   const [description, setDescription] = useState('');  // Italian text, or what is happening
   const [descriptionNote, setDescriptionNote] = useState('');
+  const [voiceError, setVoiceError] = useState('');
+  const onVoiceRef = useRef<(c: VoiceCommand) => void>(() => {});  // the latest onVoice (state changes)
   const on = state !== 'stopped';
 
-  // Back from the settings screen: show the new choice.
-  useFocusEffect(useCallback(() => setSettings(Perception.guideSettings()), []));
+  // Back from the settings screen: show the new choice. Step 1.9: listen while this screen is shown.
+  useFocusEffect(
+    useCallback(() => {
+      const s = Perception.guideSettings();
+      setSettings(s);
+      if (!s.voiceCommands || Perception.autoRun) return;
+      startListening((c) => onVoiceRef.current(c))
+        .then(() => setVoiceError(''))
+        .catch((e) => {
+          const msg = e instanceof Error ? e.message : String(e);
+          setVoiceError(msg);
+          AccessibilityInfo.announceForAccessibility(`Comandi vocali non disponibili: ${msg}`);
+        });
+      return () => {
+        stopListening().catch(() => {});
+      };
+    }, []),
+  );
 
   useEffect(() => {
     const sub = Perception.addListener('onGuideStatus', (s) => {
@@ -121,6 +142,24 @@ export default function HomeScreen() {
     }
   }
 
+  // Step 1.9: a command does what its button does; when there is nothing to do, a short answer says so.
+  function onVoice(c: VoiceCommand) {
+    if (c === 'startGuide') {
+      if (state === 'loading') return;
+      if (on) Perception.describeSay('Guida già attiva');
+      else toggleGuide();
+    } else if (c === 'stopGuide') {
+      if (state === 'loading') return;
+      if (on) toggleGuide();
+      else Perception.describeSay('Guida già ferma');
+    } else if (c === 'describe') {
+      if (!describing) toggleDescription();
+    } else if (describing) {
+      stopDescribe();
+    }
+  }
+  onVoiceRef.current = onVoice;
+
   async function toggleDescription() {
     if (describing) {
       await stopDescribe();
@@ -148,6 +187,11 @@ export default function HomeScreen() {
       <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.title} accessibilityRole="header">
         Guida Visiva
       </Text>
+      {settings.voiceCommands ? (
+        <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.text}>
+          {voiceError ? `Comandi vocali non disponibili: ${voiceError}` : 'Comandi vocali: puoi dire “Avvia guida”, “Ferma guida”, “Cosa ho davanti”, “Basta”.'}
+        </Text>
+      ) : null}
       <BigButton
         title={on ? 'Ferma guida' : 'Avvia guida'}
         hint={

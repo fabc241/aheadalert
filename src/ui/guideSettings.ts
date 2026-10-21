@@ -17,7 +17,8 @@ export const MODE_TEXT: Record<AlertMode, string> = {
   voiceOnly: 'Solo voce',
 };
 
-/** One line, e.g. "Avvisi entro 2 metri, voce e vibrazione". */
+/** One line, e.g. "Avvisi entro 2 metri, voce e vibrazione, comandi vocali accesi". */
 export function settingsSummary(s: GuideSettings): string {
-  return `Avvisi entro ${DISTANCE_TEXT[s.alertDistance]}, ${MODE_TEXT[s.mode].toLowerCase()}`;
+  const voice = s.voiceCommands ? 'comandi vocali accesi' : 'comandi vocali spenti';
+  return `Avvisi entro ${DISTANCE_TEXT[s.alertDistance]}, ${MODE_TEXT[s.mode].toLowerCase()}, ${voice}`;
 }

@@ -55,3 +55,6 @@ scripts/phase0/results/iphone/
 
 # MVP: obstacle guide logs fetched from the iPhone (personal walking sessions)
 scripts/guide/logs/
+
+# MVP step 1.9: voice command log fetched from the iPhone (what was said at home)
+scripts/voice/logs/

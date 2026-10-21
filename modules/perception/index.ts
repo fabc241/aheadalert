@@ -87,7 +87,28 @@ export type FeedbackPlayed = { haptic: boolean; sound: boolean; headphones: bool
  * not announced. Reliability messages are always spoken. Sound needs headphones and is never played with voiceOnly.
  */
 export type AlertMode = 'voiceAndVibration' | 'vibrationOnly' | 'voiceOnly';
-export type GuideSettings = { alertDistance: 1 | 1.5 | 2; mode: AlertMode; headphoneSound: boolean };
+export type GuideSettings = {
+  alertDistance: 1 | 1.5 | 2;
+  mode: AlertMode;
+  headphoneSound: boolean;
+  /** Step 1.9: hands-free voice commands (on by default). */
+  voiceCommands: boolean;
+};
+
+/**
+ * MVP step 1.9: microphone audio since the last read, 16 kHz mono float32 little-endian, echo-cancelled.
+ * endMs: Unix ms time of its last sample. dropped: samples lost because they were not read in time (10 s kept).
+ */
+export type VoiceAudio = {
+  audio: Uint8Array;
+  endMs: number;
+  running: boolean;
+  dropped: number;
+  /** Diagnostics since the last read: microphone buffers received and converted; the audio engine is running. */
+  taps: number;
+  converted: number;
+  engineRunning: boolean;
+};
 
 /**
  * MVP step 1.8: why a description ended. done = spoken to the end; alert = a guide alert went first;
@@ -113,6 +134,8 @@ type Events = {
   onGuideStatus: (s: GuideStatus) => void;
   /** A description ended before JavaScript asked (an alert or "Ferma descrizione"). */
   onDescriptionStopped: (e: { reason: DescriptionEnd }) => void;
+  /** Step 1.9: the microphone started, stopped or restarted (for the log). */
+  onVoiceEvent: (e: { event: string }) => void;
 };
 
 declare class PerceptionNativeModule extends NativeModule<Events> {
@@ -138,6 +161,12 @@ declare class PerceptionNativeModule extends NativeModule<Events> {
   describeStop(): Promise<void>;
   /** Short message in the system voice ("Un momento…", "Troppo buio per descrivere"). */
   describeSay(text: string): Promise<void>;
+  /** Step 1.9: starts the microphone (asks for it the first time); the app's voice then goes through echo cancellation. */
+  voiceStart(): Promise<void>;
+  voiceStop(): Promise<void>;
+  voiceRead(): VoiceAudio;
+  /** What the app said (guide messages, description) from `since` (Unix ms) on, or is saying. */
+  appSpeechSince(since: number): Promise<string[]>;
   deviceInfo(): DeviceInfo;
   memory(): Memory;
   startMemorySampler(): void;

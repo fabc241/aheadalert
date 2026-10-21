@@ -10,6 +10,7 @@ import { BigButton } from '../ui/BigButton';
 import { Screen } from '../ui/Screen';
 import { YELLOW } from '../ui/theme';
 import { releaseModels } from '../assistant/describe';
+import { releaseVoice } from '../assistant/voiceCommands';
 import { testDepthLive, testDepthPhotos } from '../phase0/depthTests';
 import { testDescribeRepeated } from '../phase0/describeTests';
 import {
@@ -40,6 +41,7 @@ export default function TestsScreen() {
     // The tests load their own models: the memory taken by "Cosa ho davanti?" is freed (reloaded when asked again).
     // Not when launched from the Mac: nothing is preloaded then, and a second mount would unload a running test's models.
     if (!Perception.autoRun) releaseModels().catch(() => {});
+    if (!Perception.autoRun) releaseVoice().catch(() => {});  // step 1.9: Whisper too
     const info = Perception.deviceInfo();
     const head = [
       `# Fase 0B – iPhone – ${new Date().toLocaleString('it-IT')}`,

@@ -101,8 +101,8 @@ enum SceneShot {
 /// Main thread only. Speaks the description and the short messages ("Un momento…", "Troppo buio per descrivere")
 /// with the system voice, as the guide does (with VoiceOver on, its voice and rate). Supertonic was agreed first, but
 /// on 20/10 its first sentence took 2.3–3.9 s (up to 17 s) and the 7 s target was not met: the fallback agreed.
-final class DescriptionVoice: NSObject, AVSpeechSynthesizerDelegate {
-  private let synth = AVSpeechSynthesizer()
+final class DescriptionVoice {
+  private let out = SpeechOutput("description")  // step 1.9: through the voice commands' engine while they listen
   private var utterance: AVSpeechUtterance?  // the description being spoken
   private var ended: String?
   private var waiters: [(String) -> Void] = []
@@ -113,9 +113,13 @@ final class DescriptionVoice: NSObject, AVSpeechSynthesizerDelegate {
   /// The description ended before JavaScript asked (alert or user): JavaScript stops its work.
   var onStopped: ((String) -> Void)?
 
-  override init() {
-    super.init()
-    synth.delegate = self
+  init() {
+    // Spoken to the end, or cut by an audio reset (phone call, AirPods): either way the description is over.
+    out.onDone = { [weak self] u, _ in
+      guard let self, u === self.utterance else { return }
+      self.utterance = nil
+      if !self.waiters.isEmpty { self.end("done") }
+    }
   }
 
   func begin() {
@@ -132,9 +136,8 @@ final class DescriptionVoice: NSObject, AVSpeechSynthesizerDelegate {
     let u = Self.utterance(text)
     utterance = u
     speaking = true
-    Self.activateAudio()
-    synth.stopSpeaking(at: .immediate)  // "Un momento…"
-    synth.speak(u)
+    out.stop()  // "Un momento…"
+    out.speak(u)
     return true
   }
 
@@ -147,7 +150,7 @@ final class DescriptionVoice: NSObject, AVSpeechSynthesizerDelegate {
 
   /// "Ferma descrizione".
   func stop() {
-    synth.stopSpeaking(at: .immediate)
+    out.stop()
     if active { end("user") }
   }
 
@@ -159,17 +162,8 @@ final class DescriptionVoice: NSObject, AVSpeechSynthesizerDelegate {
 
   /// Short message, at once.
   func say(_ text: String) {
-    Self.activateAudio()
-    synth.stopSpeaking(at: .immediate)
-    synth.speak(Self.utterance(text))
-  }
-
-  func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) {
-    DispatchQueue.main.async {
-      guard u === self.utterance else { return }
-      self.utterance = nil
-      if !self.waiters.isEmpty { self.end("done") }
-    }
+    out.stop()
+    out.speak(Self.utterance(text))
   }
 
   private func end(_ reason: String) {
@@ -179,7 +173,7 @@ final class DescriptionVoice: NSObject, AVSpeechSynthesizerDelegate {
     speaking = false
     if utterance != nil {
       utterance = nil
-      synth.stopSpeaking(at: .immediate)
+      out.stop()
     }
     let w = waiters
     waiters = []
@@ -192,13 +186,5 @@ final class DescriptionVoice: NSObject, AVSpeechSynthesizerDelegate {
     u.voice = AVSpeechSynthesisVoice(language: "it-IT")
     u.prefersAssistiveTechnologySettings = true
     return u
-  }
-
-  /// Same settings as the guide (ObstacleGuide.load): set again with the same values, the guide's audio engine
-  /// is not disturbed.
-  private static func activateAudio() {
-    let audio = AVAudioSession.sharedInstance()
-    try? audio.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
-    try? audio.setActive(true)
   }
 }

@@ -1,4 +1,4 @@
-// Native perception module. MVP features: obstacle guide (ObstacleGuide.swift, step 1.1), its vibrations and sounds (GuideFeedback.swift, step 1.3), light-passage warning (LightAnalyzer.swift, step 1.4), steps down and up (ObstacleAnalyzer.swift, step 1.5), settings (GuideSettings.swift, step 1.6), photo and voice for "Cosa ho davanti?" (SceneDescription.swift, step 1.8).
+// Native perception module. MVP features: obstacle guide (ObstacleGuide.swift, step 1.1), its vibrations and sounds (GuideFeedback.swift, step 1.3), light-passage warning (LightAnalyzer.swift, step 1.4), steps down and up (ObstacleAnalyzer.swift, step 1.5), settings (GuideSettings.swift, step 1.6), photo and voice for "Cosa ho davanti?" (SceneDescription.swift, step 1.8), microphone and echo cancellation for the voice commands (VoiceCommands.swift, step 1.9).
 // Phase 0B (iPhone 13): on-device measurements to decide what goes into the MVP.
 // - Depth Anything V2 Small (Core ML) on photos and live ARKit frames, per compute unit
 // - memory (phys_footprint, the metric iOS uses for out-of-memory termination) and thermal state
@@ -24,7 +24,7 @@ public class PerceptionModule: Module {
   public func definition() -> ModuleDefinition {
     Name("Perception")
 
-    Events("onLiveProgress", "onGuideStatus", "onDescriptionStopped")
+    Events("onLiveProgress", "onGuideStatus", "onDescriptionStopped", "onVoiceEvent")
 
     OnCreate {
       // Step 1.8: the guide's alerts stop a description being spoken; its hint to tilt the phone waits meanwhile.
@@ -61,9 +61,7 @@ public class PerceptionModule: Module {
     // MVP step 1.3: the guide's vibrations and sounds on their own, to learn them standing still and to check that
     // they are told apart (src/app/feedback-test.tsx). The guide must be stopped (it owns the same hardware).
     AsyncFunction("startFeedbackTest") { () -> [String: Any] in
-      let audio = AVAudioSession.sharedInstance()
-      try? audio.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers])
-      try? audio.setActive(true)
+      AppAudio.activate()
       self.feedbackTest.stop()
       self.feedbackTest.start()
       return ["haptics": GuideFeedback.hapticsSupported, "headphones": GuideFeedback.headphones]
@@ -104,6 +102,25 @@ public class PerceptionModule: Module {
     AsyncFunction("describeStop") { self.describer.stop() }.runOnQueue(.main)
 
     AsyncFunction("describeSay") { (text: String) in self.describer.say(text) }.runOnQueue(.main)
+
+    // MVP step 1.9: voice commands. JavaScript reads the microphone (echo-cancelled, 16 kHz mono float32) about every
+    // 100 ms and runs Whisper on it (src/assistant/voiceCommands.ts).
+    AsyncFunction("voiceStart") { (promise: Promise) in
+      VoiceEngine.shared.onEvent = { [weak self] e in self?.sendEvent("onVoiceEvent", ["event": e]) }
+      VoiceEngine.shared.start { result in
+        switch result {
+        case .success: promise.resolve(nil)
+        case .failure(let e): promise.reject("E_VOICE", e.localizedDescription)
+        }
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("voiceStop") { VoiceEngine.shared.stop() }.runOnQueue(.main)
+
+    Function("voiceRead") { () -> [String: Any] in VoiceEngine.shared.read() }
+
+    /// What the app said (guide, description) from `since` (Unix ms) on, or is saying.
+    AsyncFunction("appSpeechSince") { (since: Double) -> [String] in AppSpeech.since(since) }.runOnQueue(.main)
 
     Constant("documentsPath") { Paths.documents.path }
 

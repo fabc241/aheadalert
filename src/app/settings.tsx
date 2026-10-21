@@ -1,6 +1,7 @@
 // MVP step 1.6: basic settings of the guide (alert distance, alert type, sound with headphones). Reached from the
 // home screen. Each choice is saved on the phone at once and applies at once, also while the guide runs.
 // Step 1.7: "Impara i segnali" and "Prove tecniche" moved here from the home screen, at the bottom.
+// Step 1.9: "Comandi vocali" on or off (applied when back on the home screen, where the app listens).
 import { router, type Href } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
@@ -89,6 +90,26 @@ export default function SettingsScreen() {
           Con “Solo voce” il suono è sempre spento.
         </Text>
       ) : null}
+
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.section} accessibilityRole="header">
+        Comandi vocali
+      </Text>
+      <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.text}>
+        Nella schermata principale l’app ascolta: “Avvia guida”, “Ferma guida”, “Cosa ho davanti”, “Basta”. Ciò che dici
+        resta sul telefono.
+      </Text>
+      <Choice
+        title="Sì"
+        hint="Comandi vocali accesi"
+        selected={settings.voiceCommands}
+        onPress={() => change({ voiceCommands: true })}
+      />
+      <Choice
+        title="No"
+        hint="Comandi vocali spenti, il microfono non è usato"
+        selected={!settings.voiceCommands}
+        onPress={() => change({ voiceCommands: false })}
+      />
 
       <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.section} accessibilityRole="header">
         Altro
