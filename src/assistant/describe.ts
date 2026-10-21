@@ -9,6 +9,8 @@
 //   fallback agreed with the user (A2) is used; it also frees about 400 MB.
 // Same model, prompt and photo size as Phase 0, so that accuracy does not change.
 // The guide's alerts go first: one played while the description is spoken ends it (native side).
+// While the models are still being downloaded (fresh install) the request ends at once and says so, and "Basta" or
+// the button always stops a request that is waiting for the models.
 // Log: Documents/describe/describe-log.csv (fetched with scripts/guide/fetch-logs.sh).
 // Spoken and on-screen texts are in Italian.
 import { cancel, completion, translate, unloadModel } from '@qvac/sdk';
@@ -32,20 +34,48 @@ type Models = { vlm: string; tr: string };
 let models: Models | null = null;
 let preparing: Promise<Models> | null = null;
 
+/**
+ * The models are being downloaded (about 400 MB, minutes; first use of a fresh install). Loading them from storage
+ * takes a few seconds and is worth waiting for; a download is not (21/10: the request waited silently and could not
+ * be stopped). QVAC only reports progress while it downloads.
+ */
+let downloading = false;
+const onDownloadStart = new Set<() => void>();
+function onProgress(p: { percentage: number }) {
+  const now = p.percentage < 100;
+  if (now && !downloading) onDownloadStart.forEach((f) => f());
+  downloading = now;
+}
+
+const DOWNLOADING_TEXT = 'Sto ancora scaricando i modelli per la descrizione. Tieni l’app aperta e riprova tra qualche minuto.';
+
 /** Loads the two models once (translator first: small; then VisionPsy). Safe to call many times. */
 export function prepareModels(): Promise<Models> {
   if (models) return Promise.resolve(models);
   if (!preparing) {
     preparing = (async () => {
-      const tr = await loadBergamot();
-      const vlm = await loadVisionPsy();
+      const tr = await loadBergamot(onProgress);
+      const vlm = await loadVisionPsy(onProgress);
       models = { vlm, tr };
       return models;
     })().finally(() => {
       preparing = null;
+      downloading = false;
     });
   }
   return preparing;
+}
+
+/** The models, or why not: the user stopped the request, or a download began. */
+function waitForModels(stopped: Promise<void>): Promise<Models | 'stopped' | 'downloading'> {
+  let watcher = () => {};
+  const download = new Promise<'downloading'>((resolve) => {
+    watcher = () => resolve('downloading');
+    onDownloadStart.add(watcher);
+  });
+  return Promise.race([prepareModels(), stopped.then(() => 'stopped' as const), download]).finally(() =>
+    onDownloadStart.delete(watcher),
+  );
 }
 
 /** Frees the memory (before the technical tests, which load their own models). */
@@ -58,7 +88,7 @@ export async function releaseModels() {
 
 export type DescribePhase = 'photo' | 'thinking' | 'speaking';
 export type DescribeResult = {
-  end: DescriptionEnd | 'dark' | 'error';
+  end: DescriptionEnd | 'dark' | 'downloading' | 'error';
   italian: string;
   /** From the request to the start of the voice; undefined when nothing was spoken. */
   toVoiceMs?: number;
@@ -89,24 +119,37 @@ export async function describe(onPhase: (p: DescribePhase, text?: string) => voi
   const row: Record<string, unknown> = {};
   let stopped: DescriptionEnd | null = null;
   let requestId: string | null = null;
+  let onStop = () => {};
+  const stoppedSignal = new Promise<void>((resolve) => (onStop = resolve));
   const sub = Perception.addListener('onDescriptionStopped', ({ reason }) => {
     stopped = reason;
+    onStop();
     if (requestId) cancel({ requestId }).catch(() => {});
   });
   const result: DescribeResult = { end: 'error', italian: '' };
   try {
+    if (!models && downloading) {
+      await Perception.describeSay(DOWNLOADING_TEXT);
+      result.end = 'downloading';
+      return result;
+    }
     await Perception.describeBegin();
     onPhase('photo');
     if (!models) Perception.describeSay('Un momento, preparo la descrizione');
     // The photo is taken at once (the scene the user asked about), while the models may still be loading.
     const [shot, m] = await Promise.all([
       Perception.describeShot(PHOTO_MAX_SIDE),
-      prepareModels().then((x) => ((row.models_wait_ms = Date.now() - t0), x)),
+      waitForModels(stoppedSignal).then((x) => ((row.models_wait_ms = Date.now() - t0), x)),
     ]);
     row.photo_from = shot.source;
     row.photo_ms = Math.round(shot.ms);
     row.light = shot.light === undefined ? undefined : Math.round(shot.light);
-    if (stopped) return Object.assign(result, { end: stopped });
+    if (stopped || m === 'stopped') return Object.assign(result, { end: stopped ?? 'user' });
+    if (m === 'downloading') {
+      await Perception.describeSay(DOWNLOADING_TEXT);
+      result.end = 'downloading';
+      return result;
+    }
     row.brightness = Math.round(shot.brightness);
     if ((shot.light !== undefined && shot.light < DARK_LIGHT) || shot.brightness < DARK_PHOTO) {
       await Perception.describeSay('Troppo buio per descrivere');

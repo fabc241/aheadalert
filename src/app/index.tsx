@@ -58,6 +58,7 @@ const PHASE_TEXT: Record<DescribePhase, string> = {
 
 const END_TEXT: Partial<Record<DescribeResult['end'], string>> = {
   dark: 'Troppo buio per descrivere.',
+  downloading: 'Modelli per la descrizione in download: tieni l’app aperta e riprova tra qualche minuto.',
   alert: '(interrotta da un avviso)',
   user: '(fermata)',
 };
@@ -174,8 +175,8 @@ export default function HomeScreen() {
     if (r.end === 'error') {
       setDescription(`Descrizione non riuscita: ${r.error}`);
       Perception.describeSay('Descrizione non riuscita');
-    } else if (r.end === 'dark') {
-      setDescription(END_TEXT.dark ?? '');
+    } else if (r.end === 'dark' || r.end === 'downloading') {
+      setDescription(END_TEXT[r.end] ?? '');
     } else {
       if (!r.italian) setDescription('');
       setDescriptionNote(END_TEXT[r.end] ?? '');
