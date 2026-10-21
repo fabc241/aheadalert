@@ -1,4 +1,4 @@
-// Native perception module. MVP features: obstacle guide (ObstacleGuide.swift, step 1.1), its vibrations and sounds (GuideFeedback.swift, step 1.3), light-passage warning (LightAnalyzer.swift, step 1.4), steps down and up (ObstacleAnalyzer.swift, step 1.5), settings (GuideSettings.swift, step 1.6).
+// Native perception module. MVP features: obstacle guide (ObstacleGuide.swift, step 1.1), its vibrations and sounds (GuideFeedback.swift, step 1.3), light-passage warning (LightAnalyzer.swift, step 1.4), steps down and up (ObstacleAnalyzer.swift, step 1.5), settings (GuideSettings.swift, step 1.6), photo and voice for "Cosa ho davanti?" (SceneDescription.swift, step 1.8).
 // Phase 0B (iPhone 13): on-device measurements to decide what goes into the MVP.
 // - Depth Anything V2 Small (Core ML) on photos and live ARKit frames, per compute unit
 // - memory (phys_footprint, the metric iOS uses for out-of-memory termination) and thermal state
@@ -19,11 +19,19 @@ public class PerceptionModule: Module {
   private let guide = ObstacleGuide()
   private let feedbackTest = GuideFeedback()  // main
   private var player: AudioPlayback?
+  private let describer = DescriptionVoice()  // main
 
   public func definition() -> ModuleDefinition {
     Name("Perception")
 
-    Events("onLiveProgress", "onGuideStatus")
+    Events("onLiveProgress", "onGuideStatus", "onDescriptionStopped")
+
+    OnCreate {
+      // Step 1.8: the guide's alerts stop a description being spoken; its hint to tilt the phone waits meanwhile.
+      self.guide.onAlert = { [weak self] in self?.describer.alert() }
+      self.guide.describing = { [weak self] in self?.describer.active ?? false }
+      self.describer.onStopped = { [weak self] reason in self?.sendEvent("onDescriptionStopped", ["reason": reason]) }
+    }
 
     // MVP step 1.1: obstacle guide with short voice messages. Resolves once the camera is running.
     AsyncFunction("startGuide") { (promise: Promise) in
@@ -71,6 +79,32 @@ public class PerceptionModule: Module {
       self.feedbackTest.stop()
     }.runOnQueue(.main)
 
+    // MVP step 1.8: "Cosa ho davanti?". The models run in JavaScript (src/assistant/describe.ts).
+    // Photo: from the guide's camera when it runs, otherwise a short camera session.
+    AsyncFunction("describeShot") { (maxSide: Int, promise: Promise) in
+      let done: (Result<[String: Any], Error>) -> Void = { result in
+        switch result {
+        case .success(let r): promise.resolve(r)
+        case .failure(let e): promise.reject("E_SHOT", e.localizedDescription)
+        }
+      }
+      if self.guide.cameraRunning { self.guide.shot(maxSide: maxSide, completion: done) }
+      else { SceneShot.capture(maxSide: maxSide, completion: done) }
+    }.runOnQueue(.main)
+
+    AsyncFunction("describeBegin") { self.describer.begin() }.runOnQueue(.main)
+
+    /// Speaks the description; false when it has been stopped meanwhile.
+    AsyncFunction("describeSpeak") { (text: String) -> Bool in self.describer.speak(text) }.runOnQueue(.main)
+
+    AsyncFunction("describeFinish") { (promise: Promise) in
+      self.describer.finish { reason in promise.resolve(reason) }
+    }.runOnQueue(.main)
+
+    AsyncFunction("describeStop") { self.describer.stop() }.runOnQueue(.main)
+
+    AsyncFunction("describeSay") { (text: String) in self.describer.say(text) }.runOnQueue(.main)
+
     Constant("documentsPath") { Paths.documents.path }
 
     // Tests to run at launch, comma-separated (set from the Mac with devicectl --environment-variables).
@@ -109,6 +143,16 @@ public class PerceptionModule: Module {
       let url = URL(fileURLWithPath: path)
       try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
       try text.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    AsyncFunction("appendText") { (path: String, text: String) in
+      let url = URL(fileURLWithPath: path)
+      try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      if !FileManager.default.fileExists(atPath: url.path) { FileManager.default.createFile(atPath: url.path, contents: nil) }
+      let h = try FileHandle(forWritingTo: url)
+      defer { try? h.close() }
+      try h.seekToEnd()
+      try h.write(contentsOf: Data(text.utf8))
     }
 
     AsyncFunction("readFile") { (path: String) -> Data in

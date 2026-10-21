@@ -7,10 +7,13 @@
 // Step 1.6: "Impostazioni" (alert distance, alert type, sound with headphones); the current choice is in its hint.
 // Step 1.7: final layout, only "Avvia guida" and "Impostazioni" ("Impara i segnali" and "Prove tecniche" are at the
 // bottom of the settings).
+// Step 1.8: "Cosa ho davanti?" between the two, with the guide on or off (src/assistant/describe.ts); while it speaks
+// it becomes "Ferma descrizione", and the description stays written below it.
 import { Redirect, router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import Perception, { type GuideStatus, type Reliability, type ReliabilityReason } from '../../modules/perception';
+import { describe, stopDescribe, type DescribePhase, type DescribeResult } from '../assistant/describe';
 import { BigButton } from '../ui/BigButton';
 import { DISTANCE_TEXT, settingsSummary } from '../ui/guideSettings';
 import { Screen } from '../ui/Screen';
@@ -44,6 +47,18 @@ const REASON_TEXT: Partial<Record<ReliabilityReason, string>> = {
 
 type ReliabilityState = { level: Reliability; reason: ReliabilityReason } | null;
 
+const PHASE_TEXT: Record<DescribePhase, string> = {
+  photo: 'Scatto la foto…',
+  thinking: 'Descrivo…',
+  speaking: '',
+};
+
+const END_TEXT: Partial<Record<DescribeResult['end'], string>> = {
+  dark: 'Troppo buio per descrivere.',
+  alert: '(interrotta da un avviso)',
+  user: '(fermata)',
+};
+
 export default function HomeScreen() {
   const [state, setState] = useState<keyof typeof STATE_TEXT>('stopped');
   const [lastAlert, setLastAlert] = useState('');
@@ -52,6 +67,9 @@ export default function HomeScreen() {
   const [reliability, setReliability] = useState<ReliabilityState>(null);
   const [error, setError] = useState('');
   const [settings, setSettings] = useState(() => Perception.guideSettings());
+  const [describing, setDescribing] = useState(false);
+  const [description, setDescription] = useState('');  // Italian text, or what is happening
+  const [descriptionNote, setDescriptionNote] = useState('');
   const on = state !== 'stopped';
 
   // Back from the settings screen: show the new choice.
@@ -103,6 +121,28 @@ export default function HomeScreen() {
     }
   }
 
+  async function toggleDescription() {
+    if (describing) {
+      await stopDescribe();
+      return;
+    }
+    setDescribing(true);
+    setDescriptionNote('');
+    const r = await describe((phase, text) => {
+      setDescription(text || PHASE_TEXT[phase]);
+    });
+    setDescribing(false);
+    if (r.end === 'error') {
+      setDescription(`Descrizione non riuscita: ${r.error}`);
+      Perception.describeSay('Descrizione non riuscita');
+    } else if (r.end === 'dark') {
+      setDescription(END_TEXT.dark ?? '');
+    } else {
+      if (!r.italian) setDescription('');
+      setDescriptionNote(END_TEXT[r.end] ?? '');
+    }
+  }
+
   return (
     <Screen>
       <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.title} accessibilityRole="header">
@@ -147,6 +187,23 @@ export default function HomeScreen() {
         ) : null}
       </View>
       <BigButton
+        title={describing ? 'Ferma descrizione' : 'Cosa ho davanti?'}
+        hint={describing ? 'Zittisce la descrizione' : 'Descrizione indicativa, non per la sicurezza'}
+        onPress={toggleDescription}
+      />
+      {description ? (
+        <View style={styles.descriptionBox} accessible>
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.status}>
+            {description}
+          </Text>
+          {descriptionNote ? (
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.text}>
+              {descriptionNote}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+      <BigButton
         title="Impostazioni"
         hint={`${settingsSummary(settings)}. Cambia distanza e tipo degli avvisi, impara i segnali`}
         onPress={() => router.push('/settings')}
@@ -162,6 +219,7 @@ const styles = StyleSheet.create({
   statusBoxSuspended: { backgroundColor: YELLOW },
   suspendedText: { color: BLACK, fontSize: 28, fontWeight: '800' },
   suspendedLight: { color: BLACK, fontWeight: '700' },
+  descriptionBox: { borderColor: WHITE, borderWidth: 2, borderRadius: 12, padding: 14, gap: 8 },
   status: { color: WHITE, fontSize: 24, fontWeight: '700' },
   text: { color: WHITE, fontSize: 22 },
 });

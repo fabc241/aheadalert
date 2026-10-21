@@ -89,7 +89,31 @@ export type FeedbackPlayed = { haptic: boolean; sound: boolean; headphones: bool
 export type AlertMode = 'voiceAndVibration' | 'vibrationOnly' | 'voiceOnly';
 export type GuideSettings = { alertDistance: 1 | 1.5 | 2; mode: AlertMode; headphoneSound: boolean };
 
-type Events = { onLiveProgress: (p: LiveProgress) => void; onGuideStatus: (s: GuideStatus) => void };
+/**
+ * MVP step 1.8: why a description ended. done = spoken to the end; alert = a guide alert went first;
+ * user = "Ferma descrizione"; replaced = a new description started.
+ */
+export type DescriptionEnd = 'done' | 'alert' | 'user' | 'replaced';
+/**
+ * source: guide = from the running guide's camera; camera = short camera session. light: ARKit lumens.
+ * brightness: mean luma of the photo, 0–255.
+ */
+export type DescriptionShot = {
+  path: string;
+  width: number;
+  height: number;
+  source: 'guide' | 'camera';
+  ms: number;
+  brightness: number;
+  light?: number;
+};
+
+type Events = {
+  onLiveProgress: (p: LiveProgress) => void;
+  onGuideStatus: (s: GuideStatus) => void;
+  /** A description ended before JavaScript asked (an alert or "Ferma descrizione"). */
+  onDescriptionStopped: (e: { reason: DescriptionEnd }) => void;
+};
 
 declare class PerceptionNativeModule extends NativeModule<Events> {
   readonly documentsPath: string;
@@ -103,6 +127,17 @@ declare class PerceptionNativeModule extends NativeModule<Events> {
   /** step: distance step as spoken, 1 = half a metre … 4 = two metres (stronger when closer). */
   playFeedback(kind: FeedbackKind, step: number, low: boolean, haptic: boolean, sound: boolean): Promise<FeedbackPlayed>;
   stopFeedbackTest(): Promise<void>;
+  /** Step 1.8: photo for "Cosa ho davanti?" (portrait JPEG, long side maxSide). */
+  describeShot(maxSide: number): Promise<DescriptionShot>;
+  /** Starts a description: from now on describeStop() and, once it speaks, guide alerts end it. */
+  describeBegin(): Promise<void>;
+  /** Speaks the description (system voice); false when it has ended meanwhile. */
+  describeSpeak(text: string): Promise<boolean>;
+  /** Resolves when the description has been spoken, or with why it ended. */
+  describeFinish(): Promise<DescriptionEnd>;
+  describeStop(): Promise<void>;
+  /** Short message in the system voice ("Un momento…", "Troppo buio per descrivere"). */
+  describeSay(text: string): Promise<void>;
   deviceInfo(): DeviceInfo;
   memory(): Memory;
   startMemorySampler(): void;
@@ -110,6 +145,7 @@ declare class PerceptionNativeModule extends NativeModule<Events> {
   setKeepAwake(on: boolean): void;
   fileExists(path: string): boolean;
   writeText(path: string, text: string): Promise<void>;
+  appendText(path: string, text: string): Promise<void>;
   readFile(path: string): Promise<Uint8Array>;
   prepareDepthModel(): Promise<{ compiled: boolean; compileMs: number }>;
   benchDepthPhotos(): Promise<PhotoBenchRow[]>;

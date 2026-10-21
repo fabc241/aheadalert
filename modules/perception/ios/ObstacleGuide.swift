@@ -6,6 +6,8 @@
 // MVP step 1.5 (experimental): step down and step up ahead ("Gradino giù / su, un metro"), from the same analysis.
 // MVP step 1.6: the user's settings (GuideSettings): alert distance, voice and/or vibration, sound with headphones.
 // MVP step 1.7: phone locked or app left while the guide runs: paused (shown on screen), then started again on return.
+// MVP step 1.8: the photo for "Cosa ho davanti?" comes from the guide's camera; its alerts stop a description being
+// spoken (SceneDescription.swift), and "Inclina il telefono verso il basso" waits (the user frames the scene).
 // Everything runs natively; JavaScript only starts/stops the guide and receives a status once a second.
 //
 // Pipeline per frame:
@@ -264,6 +266,8 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   private let log = GuideLog()
   private let recorder = GuideRecorder()  // inferQueue
   var onStatus: (([String: Any]) -> Void)?
+  var onAlert: (() -> Void)?  // step 1.8, main: an alert or reliability message is about to be played
+  var describing: (() -> Bool)?  // step 1.8, main: a description is in progress
 
   // frameQueue
   private var request: VNCoreMLRequest?
@@ -274,6 +278,8 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   private var cameraHeight = LightTuning.defaultCameraHeight  // above the floor, kept from the last frame with floor
   private var heights: [Float] = []  // step 1.5: recent heights of the phone above the floor (see floorPlane)
   private var latestLight: LightAnalysis?  // for the recording of the next analysed frame
+  private var pendingShot: (id: Int, maxSide: Int, t0: Double, completion: (Result<[String: Any], Error>) -> Void)?  // step 1.8
+  private var shotId = 0
 
   // main
   private(set) var running = false
@@ -391,6 +397,25 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     }
   }
 
+  /// Step 1.8: whether the photo can come from the guide's camera (otherwise SceneShot.capture). Main.
+  var cameraRunning: Bool { running }
+
+  /// Step 1.8: the next camera frame as a JPEG. Fails after 2 s without frames (guide paused, camera starting).
+  func shot(maxSide: Int, completion: @escaping (Result<[String: Any], Error>) -> Void) {
+    let t0 = CACurrentMediaTime()
+    frameQueue.async {
+      self.pendingShot?.completion(.failure(Phase0Error("foto sostituita da una nuova richiesta")))
+      self.shotId += 1
+      let id = self.shotId
+      self.pendingShot = (id, maxSide, t0, completion)
+      self.frameQueue.asyncAfter(deadline: .now() + 2) {
+        guard let p = self.pendingShot, p.id == id else { return }
+        self.pendingShot = nil
+        p.completion(.failure(Phase0Error("fotocamera non disponibile")))
+      }
+    }
+  }
+
   /// Step 1.6: new settings from the settings screen (already saved), used from the next frame on.
   func apply(_ new: GuideSettings) {
     DispatchQueue.main.async {
@@ -430,6 +455,11 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   // MARK: ARSessionDelegate (frameQueue)
 
   func session(_ session: ARSession, didUpdate frame: ARFrame) {
+    if let shot = pendingShot {
+      pendingShot = nil
+      SceneShot.save(frame.capturedImage, light: frame.lightEstimate.map { Double($0.ambientIntensity) },
+                     maxSide: shot.maxSide, source: "guide", t0: shot.t0, completion: shot.completion)
+    }
     guard request != nil else { return }
     lightStep(frame)
     guard !busy, let request else { return }
@@ -712,6 +742,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
     // Reliability messages wait for the voice to be free, so they never cut an alert short.
     let cut = voice.speaking && voice.speakingReliability && reliability.changePending
     if !voice.speaking || cut, let text = reliability.takeMessage(now: now) {
+      onAlert?()
       voice.say(text, interrupt: cut, reliability: true)
       log.write("reliability-voice", cut ? "\(text) (cut the previous one)" : text)
       // the reminder every 15 s while suspended (the change itself has buzzed already)
@@ -720,7 +751,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
 
     // Spoken hint: the phone is held too upright to see the floor close by.
     let upright = uprightSince.map { now - $0 > 3 } ?? false
-    if upright && now - lastHint >= GuideTuning.hintEvery && !voice.speaking {
+    if upright && now - lastHint >= GuideTuning.hintEvery && !voice.speaking && describing?() != true {
       lastHint = now
       voice.say("Inclina il telefono verso il basso")
       log.write("hint", "upright")
@@ -856,6 +887,7 @@ final class ObstacleGuide: NSObject, ARSessionDelegate {
   /// voice. Returns what was played and how long the vibration took to start.
   private func signal(_ kind: FeedbackKind, step: Int = 2, low: Bool = false, text: String, zone: Zone? = nil,
                       interrupt: Bool = false, light: Bool = false, now: Double) -> (haptic: Bool, sound: Bool, ms: Double) {
+    onAlert?()  // step 1.8: alerts first
     let t0 = DispatchTime.now().uptimeNanoseconds
     let played = feedback.play(kind, step: step, low: low, haptic: settings.vibration, sound: settings.sound)
     let ms = elapsedMs(since: t0)

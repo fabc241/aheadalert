@@ -2,7 +2,7 @@
 # Phase 0B: builds (Release), installs on the iPhone and launches the app.
 # Optional: comma-separated list of tests to run automatically, e.g.
 #   scripts/phase0/build-and-run.sh ocr,descriptions
-# Tests: depth-photos, depth-live, depth-long, what-is-ahead, descriptions, ocr, voice, classification
+# Tests: depth-photos, depth-live, depth-long, what-is-ahead, describe-10 (step 1.8), descriptions, ocr, voice, classification
 # CONSOLE=1 streams the app output (memory trace, errors) until it exits. SKIP_BUILD=1 only launches.
 set -e
 cd "$(dirname "$0")/../../ios"

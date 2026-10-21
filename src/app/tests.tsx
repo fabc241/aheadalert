@@ -9,7 +9,9 @@ import Perception, { type DepthUnits } from '../../modules/perception';
 import { BigButton } from '../ui/BigButton';
 import { Screen } from '../ui/Screen';
 import { YELLOW } from '../ui/theme';
+import { releaseModels } from '../assistant/describe';
 import { testDepthLive, testDepthPhotos } from '../phase0/depthTests';
+import { testDescribeRepeated } from '../phase0/describeTests';
 import {
   checkFiles,
   testClassify,
@@ -22,6 +24,9 @@ import {
 
 const REPORT = `${Perception.documentsPath}/phase0/results/phase0b-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.md`;
 
+// Launched from the Mac the screen can be mounted twice (redirect from the home screen): the tests run only once.
+let autoRunStarted = false;
+
 type Test = { id: string; title: string; hint: string; run: (r: Reporter) => Promise<unknown> };
 
 export default function TestsScreen() {
@@ -32,6 +37,9 @@ export default function TestsScreen() {
   const bestUnit = useRef<DepthUnits>('ane');
 
   useEffect(() => {
+    // The tests load their own models: the memory taken by "Cosa ho davanti?" is freed (reloaded when asked again).
+    // Not when launched from the Mac: nothing is preloaded then, and a second mount would unload a running test's models.
+    if (!Perception.autoRun) releaseModels().catch(() => {});
     const info = Perception.deviceInfo();
     const head = [
       `# Fase 0B – iPhone – ${new Date().toLocaleString('it-IT')}`,
@@ -102,6 +110,12 @@ export default function TestsScreen() {
       run: (r) => testDepthLive(r, [bestUnit.current], 300),
     },
     { id: 'what-is-ahead', title: 'Cosa ho davanti?', hint: 'Scatta, descrive, traduce e legge ad alta voce', run: testWhatIsAhead },
+    {
+      id: 'describe-10',
+      title: 'Cosa ho davanti? 10 volte',
+      hint: 'Passo 1.8: tempi e memoria su 10 richieste di fila, telefono fermo in una stanza illuminata',
+      run: testDescribeRepeated,
+    },
     { id: 'descriptions', title: 'Descrizioni 14 foto', hint: 'VisionPsy Flash + traduzione, alcuni minuti', run: testVisionPsy },
     { id: 'ocr', title: 'Lettura cartelli', hint: 'OCR sui due cartelli di prova', run: testOCR },
     { id: 'voice', title: 'Voce italiana', hint: 'Supertonic 3, due frasi da ascoltare', run: testTTS },
@@ -111,7 +125,8 @@ export default function TestsScreen() {
   // Auto-run from the Mac (PHASE0_AUTO=depth-photos,descriptions,…): one test after another.
   useEffect(() => {
     const ids = Perception.autoRun.split(',').map((x) => x.trim()).filter(Boolean);
-    if (!ids.length) return;
+    if (!ids.length || autoRunStarted) return;
+    autoRunStarted = true;
     (async () => {
       for (const id of ids) {
         const t = tests.find((x) => x.id === id);

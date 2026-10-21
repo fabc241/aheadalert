@@ -1,20 +1,9 @@
 // Phase 0B (iPhone 13): on-device QVAC tests, same models and settings as Phase 0A on the Mac.
 // Report lines and status messages are in Italian: they are shown in the app and read by VoiceOver.
-import {
-  classify,
-  completion,
-  loadModel,
-  ocr,
-  textToSpeech,
-  translate,
-  unloadModel,
-  BERGAMOT_EN_IT,
-  MMPROJ_VISIONPSY_NANO_460M_MULTIMODAL_Q8_0,
-  OCR_LATIN,
-  TTS_MULTILINGUAL_SUPERTONIC3_Q8_0,
-  VISIONPSY_NANO_460M_MULTIMODAL_Q4_K_M,
-} from '@qvac/sdk';
+import { classify, completion, loadModel, ocr, textToSpeech, translate, unloadModel, OCR_LATIN } from '@qvac/sdk';
 import Perception from '../../modules/perception';
+import * as models from '../assistant/models';
+import { PROMPT_DESCR } from '../assistant/models';
 
 export type Reporter = {
   /** report line (markdown) */
@@ -28,8 +17,7 @@ const PHASE0 = `${DOCS}/phase0`;
 export const PHOTOS = Array.from({ length: 14 }, (_, i) => `${PHASE0}/real-photos/${String(i + 1).padStart(2, '0')}.jpg`);
 const SIGNS = [`${PHASE0}/images/cartello.png`, `${PHASE0}/images/cartello_buio.png`];
 
-// Same prompts as Phase 0A, to compare the answers with the Mac
-const PROMPT_DESCR = 'Describe this image in two short sentences.';
+// Same prompts as Phase 0A, to compare the answers with the Mac (the description prompt is the MVP one)
 const PROMPT_STEPS =
   'Are there any stairs, steps, escalators or curbs in this image? Answer "yes" or "no" first, then say where in one short sentence.';
 
@@ -72,25 +60,8 @@ export function checkFiles(): string[] {
 
 // --- VisionPsy Flash ---------------------------------------------------------------------------
 
-function loadVisionPsy(r: Reporter) {
-  return loadModel({
-    modelSrc: VISIONPSY_NANO_460M_MULTIMODAL_Q4_K_M,
-    modelConfig: {
-      ctx_size: 2048,
-      projectionModelSrc: MMPROJ_VISIONPSY_NANO_460M_MULTIMODAL_Q8_0,
-      image_no_upscale: 'on',
-    },
-    onProgress: progress(r, 'VisionPsy Flash'),
-  });
-}
-
-function loadBergamot(r: Reporter) {
-  return loadModel({
-    modelSrc: BERGAMOT_EN_IT,
-    modelConfig: { engine: 'Bergamot', from: 'en', to: 'it' },
-    onProgress: progress(r, 'Bergamot EN→IT'),
-  });
-}
+const loadVisionPsy = (r: Reporter) => models.loadVisionPsy(progress(r, 'VisionPsy Flash'));
+const loadBergamot = (r: Reporter) => models.loadBergamot(progress(r, 'Bergamot EN→IT'));
 
 async function ask(modelId: string, image: string, prompt: string) {
   const t = Date.now();
@@ -166,13 +137,7 @@ export async function testVisionPsy(r: Reporter) {
 
 // --- Text to speech ----------------------------------------------------------------------------
 
-function loadSupertonic(r: Reporter) {
-  return loadModel({
-    modelSrc: TTS_MULTILINGUAL_SUPERTONIC3_Q8_0,
-    modelConfig: { ttsEngine: 'supertonic', language: 'it', voice: 'F1', ttsSpeed: 1.0, ttsNumInferenceSteps: 5 },
-    onProgress: progress(r, 'Supertonic 3'),
-  });
-}
+const loadSupertonic = (r: Reporter) => models.loadSupertonic(progress(r, 'Supertonic 3'));
 
 async function speak(modelId: string, text: string, file: string) {
   const t = Date.now();
